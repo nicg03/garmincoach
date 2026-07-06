@@ -49,6 +49,33 @@ Flags: `--since 30d` or `--since 2026-06-01`, `--full` to keep raw data instead
 of summarizing, `--show` to watch the browser during a pull, `--limit N` for how
 many recent activities to scan.
 
+## Desktop app (no terminal needed)
+
+Prefer clicking to typing? Double-click **`Garmin Sync.command`** in this folder.
+The first launch sets up the environment automatically; after that it opens a
+small window with everything you need:
+
+- **Log in** — one-time visible sign-in (email, password, MFA). Reused after.
+- **Fill the blank → today** — the main button. It looks at the last day already
+  stored and fetches only what's missing, up to today. No dates to think about.
+- **Fetch the last N days** — pull a specific recent range instead.
+- **Combine full history → 1 file** — writes `data/garmin_history.json`, a single
+  bundle of your entire local history (every activity + every day) to drag into
+  Claude.
+- **Watch the browser** — optional; shows the Chromium window during a fetch.
+
+The window shows your last-pulled date and how much history is stored, and logs
+each step. It wraps the same engine as the CLI (`garmin_sync/core.py`), so both
+stay in sync.
+
+You can also launch it from a terminal with `python -m garmin_sync.app`.
+
+If your Python was built without Tk (common with Homebrew Python — you'd see
+`No module named '_tkinter'`), the launcher automatically falls back to an
+identical **local web interface** instead: it opens the same controls in your
+browser at `http://127.0.0.1:<port>/`. Nothing extra to install; it's pure
+standard library. Launch it directly with `python -m garmin_sync.webapp`.
+
 ## What "summarize" means
 
 Garmin returns megabytes of per-second streams. By default each activity is

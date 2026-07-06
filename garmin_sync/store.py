@@ -48,6 +48,16 @@ class Store:
     def commit(self):
         self.conn.commit()
 
+    def last_day(self) -> str | None:
+        """Most recent date we have a day record for (ISO string), or None."""
+        row = self.conn.execute("SELECT MAX(date) FROM days").fetchone()
+        return row[0] if row and row[0] else None
+
+    def counts(self) -> dict:
+        a = self.conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
+        d = self.conn.execute("SELECT COUNT(*) FROM days").fetchone()[0]
+        return {"activities": a, "days": d}
+
     def export(self, out_path: Path, since: str | None = None) -> dict:
         """Write one compact JSON bundle. Returns counts for logging."""
         acts = self._rows("activities", "start", since)

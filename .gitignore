@@ -1,4 +1,11 @@
+# Personal data & saved login session -- never share these
 .browser-profile/
 data/
+
+# Python
+.venv/
 __pycache__/
 *.pyc
+
+# macOS
+.DS_Store
