@@ -1,1 +1,6 @@
-playwright>=1.45
+# The deployed site. Railway installs from this file, so Playwright is
+# deliberately absent: the container never touches Garmin.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+openai>=1.40
+anthropic>=0.40

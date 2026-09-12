@@ -28,6 +28,10 @@ class Store:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path)
+        # WAL lets the web server read while a sync writes; the busy timeout
+        # keeps concurrent writers from failing outright.
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA busy_timeout=5000")
         self.conn.executescript(SCHEMA)
         self.conn.commit()
 
@@ -53,10 +57,45 @@ class Store:
         row = self.conn.execute("SELECT MAX(date) FROM days").fetchone()
         return row[0] if row and row[0] else None
 
+    def first_day(self) -> str | None:
+        """Oldest date we have a day record for (ISO string), or None."""
+        row = self.conn.execute("SELECT MIN(date) FROM days").fetchone()
+        return row[0] if row and row[0] else None
+
     def counts(self) -> dict:
         a = self.conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
         d = self.conn.execute("SELECT COUNT(*) FROM days").fetchone()[0]
         return {"activities": a, "days": d}
+
+    def days_between(self, start: str | None = None,
+                     end: str | None = None) -> list[dict]:
+        """Day summaries in [start, end], ascending. Bounds are optional."""
+        return self._between("days", "date", start, end)
+
+    def activities_between(self, start: str | None = None,
+                           end: str | None = None) -> list[dict]:
+        """Activity summaries in [start, end], ascending.
+
+        `start` is stored as 'YYYY-MM-DD HH:MM:SS', so it's compared on its
+        date prefix to keep the bounds inclusive of the whole end day.
+        """
+        return self._between("activities", "substr(start,1,10)", start, end,
+                             order="start")
+
+    def _between(self, table: str, col: str, start: str | None,
+                 end: str | None, order: str | None = None) -> list[dict]:
+        sql = f"SELECT summary FROM {table}"
+        where, params = [], []
+        if start:
+            where.append(f"{col} >= ?")
+            params.append(start)
+        if end:
+            where.append(f"{col} <= ?")
+            params.append(end)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += f" ORDER BY {order or col} ASC"
+        return [json.loads(r[0]) for r in self.conn.execute(sql, tuple(params))]
 
     def export(self, out_path: Path, since: str | None = None) -> dict:
         """Write one compact JSON bundle. Returns counts for logging."""

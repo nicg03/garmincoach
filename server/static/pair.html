@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connect your computer — Garmin Sync</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="gate">
+    <div class="gate-card card" id="panel">
+      <h1>Connect your computer</h1>
+      <p class="muted" id="subtitle">Checking…</p>
+      <div id="body"></div>
+      <p class="error" id="error"></p>
+    </div>
+  </div>
+<script>
+const code = decodeURIComponent(location.pathname.split('/').pop() || '').toUpperCase();
+const $ = (id) => document.getElementById(id);
+
+async function post(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+function show(html, subtitle) {
+  $('subtitle').textContent = subtitle || '';
+  $('body').innerHTML = html;
+  $('error').textContent = '';
+}
+
+async function me() {
+  const res = await fetch('/api/me');
+  if (!res.ok) return null;
+  return res.json();
+}
+
+function loginForm() {
+  show(`
+    <p class="muted">This page was opened by the sync app on your computer.
+      Sign in with the <strong>same account</strong> you use on this site so
+      Garmin data lands in the right place.</p>
+    <input id="email" type="email" placeholder="Email" autocomplete="username">
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="primary" id="btn-login" type="button">Sign in</button>
+  `, `Code ${code}`);
+  $('btn-login').onclick = async () => {
+    $('error').textContent = '';
+    try {
+      await post('/api/login', {
+        email: $('email').value,
+        password: $('password').value,
+      });
+      await ready();
+    } catch (e) {
+      $('error').textContent = e.message;
+    }
+  };
+}
+
+async function ready() {
+  const user = await me();
+  if (!user) {
+    loginForm();
+    return;
+  }
+  let info;
+  try {
+    const res = await fetch(`/api/pair/${encodeURIComponent(code)}`);
+    info = await res.json();
+    if (!res.ok) throw new Error(info.error || 'Unknown code');
+  } catch (e) {
+    show(`<p>${e.message}</p>
+          <p class="muted">On your computer, run the connect command again
+          from the Account tab (or the empty Dashboard).</p>`,
+         'This link expired');
+    return;
+  }
+  if (!info.ready) {
+    show('<p>This code was already used. Start a new connection from your computer.</p>',
+         `Code ${code}`);
+    return;
+  }
+  show(`
+    <p>Signed in as <strong>${user.email}</strong>.</p>
+    <p class="muted">Click below to let that computer publish Garmin data
+      into <em>this</em> account. You only do this once per machine.</p>
+    <button class="primary" id="btn-approve" type="button">Connect this computer</button>
+  `, `Code ${code}`);
+  $('btn-approve').onclick = async () => {
+    $('error').textContent = '';
+    $('btn-approve').disabled = true;
+    try {
+      await post('/api/pair/approve', { user_code: code });
+      show(`<p><strong>Connected.</strong> Close this tab and go back to the
+            terminal (or the sync app). Next, run
+            <code>python -m garmin_sync sync</code> to send your data.</p>`,
+           'Done');
+    } catch (e) {
+      $('btn-approve').disabled = false;
+      $('error').textContent = e.message;
+    }
+  };
+}
+
+ready().catch((e) => {
+  $('error').textContent = e.message || 'Could not load this page.';
+});
+</script>
+</body>
+</html>

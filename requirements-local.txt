@@ -1,0 +1,5 @@
+# Your Mac: the sync needs a real browser, and pulling in the server's
+# requirements too means you can run the site locally before deploying it.
+-r requirements.txt
+playwright>=1.45
+certifi>=2024.0.0

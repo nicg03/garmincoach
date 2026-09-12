@@ -84,6 +84,8 @@ PAGE = """<!doctype html>
   .ghost:hover:not(:disabled){background:#eef1f6;}
   input[type=number]{width:64px;padding:8px;border:1px solid var(--line);
         border-radius:8px;font:inherit;text-align:center;}
+  input[type=text],input[type=password]{flex:1;min-width:0;padding:9px;
+        border:1px solid var(--line);border-radius:8px;font:inherit;}
   .opt{color:var(--muted);font-size:13px;margin:2px 0 14px;display:flex;
        align-items:center;gap:6px;}
   #log{background:#0f141b;color:#cdd6e3;border-radius:12px;padding:14px;
@@ -104,7 +106,12 @@ PAGE = """<!doctype html>
     <div class="counts" id="counts">History: …</div>
   </div>
 
-  <button class="primary" id="btn-fill" onclick="run('fill')">Fill the blank &nbsp;→&nbsp; today</button>
+  <button class="primary" id="btn-sync" onclick="run('sync')">Update &nbsp;&amp;&nbsp; publish to my site</button>
+
+  <div class="row">
+    <span class="muted">or just fetch, without publishing</span>
+    <button class="ghost" id="btn-fill" onclick="run('fill')" style="margin-left:auto">Fill the blank</button>
+  </div>
 
   <div class="row">
     <span class="muted">or fetch the last</span>
@@ -118,6 +125,20 @@ PAGE = """<!doctype html>
     <button class="ghost" id="btn-login" onclick="run('login')" style="margin-left:auto">Log in</button>
   </div>
 
+  <div class="card">
+    <div class="last">My site</div>
+    <div class="counts" id="site-state">Not configured yet.</div>
+    <div class="counts">Paste the site address, then Connect — a browser opens so you can approve. No token to copy.</div>
+    <div class="row" style="margin-top:10px">
+      <input type="text" id="site-url" placeholder="https://your-app.up.railway.app">
+      <button class="ghost" id="btn-save-site" onclick="linkSite()">Connect</button>
+    </div>
+    <div class="row">
+      <button class="ghost" id="btn-push" onclick="run('push')">Publish the last 30 days</button>
+      <button class="ghost" id="btn-pushall" onclick="run('push?all=1')" style="margin-left:auto">Publish everything</button>
+    </div>
+  </div>
+
   <label class="opt"><input type="checkbox" id="watch"> Watch the browser while fetching</label>
 
   <div id="log"></div>
@@ -125,19 +146,36 @@ PAGE = """<!doctype html>
 </div>
 <script>
 let polling=false;
+const BUTTONS=['btn-sync','btn-fill','btn-fetch','btn-history','btn-login',
+               'btn-push','btn-pushall','btn-save-site'];
 const $=id=>document.getElementById(id);
-function setBusy(b){for(const id of ['btn-fill','btn-fetch','btn-history','btn-login'])$(id).disabled=b;}
+function setBusy(b){for(const id of BUTTONS)$(id).disabled=b;}
 async function refresh(){
   const s=await (await fetch('/api/status')).json();
   $('last').textContent = s.last
      ? `Last data: ${s.last}  (${s.ago})`
      : 'Last data: none yet — Log in, then Fill the blank';
   $('counts').textContent = `History: ${s.activities} activities · ${s.days} days stored`;
+  $('site-url').value = s.site_url || '';
+  $('site-state').textContent = s.site_url
+     ? (s.site_token ? `Publishing to ${s.site_url}` : 'Address saved — click Connect to finish linking.')
+     : 'Not configured yet — paste the address and click Connect.';
 }
 function watch(){return $('watch').checked?1:0;}
+async function linkSite(){
+  const url=$('site-url').value.trim();
+  if(!url){$('footer').textContent='Enter the site address.';return;}
+  await fetch('/api/site',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url})});
+  const r=await (await fetch('/api/link',{method:'POST'})).json();
+  if(r.ok){$('log').textContent='';startPoll();}
+  else $('footer').textContent=r.msg||'Busy';
+}
 async function run(kind){
   let url='/api/'+kind;
-  if(kind==='fill'||kind==='login'||kind==='history') url+='?watch='+watch();
+  if(kind==='fill'||kind==='login'||kind==='history'||kind==='sync')
+    url+=(url.includes('?')?'&':'?')+'watch='+watch();
   const r=await (await fetch(url,{method:'POST'})).json();
   if(r.ok){$('log').textContent='';startPoll();}
   else $('footer').textContent=r.msg||'Busy';
@@ -181,6 +219,14 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj))
 
+    def _read_json(self) -> dict:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length) or b"{}")
+            return body if isinstance(body, dict) else {}
+        except (ValueError, json.JSONDecodeError):
+            return {}
+
     def do_GET(self):
         p = urlparse(self.path)
         if p.path in ("/", "/index.html"):
@@ -192,7 +238,10 @@ class Handler(BaseHTTPRequestHandler):
             if last:
                 gap = (date.today() - date.fromisoformat(last)).days
                 ago = "today" if gap == 0 else ("yesterday" if gap == 1 else f"{gap} days ago")
+            site = core.load_config()
             return self._json({"last": last, "ago": ago, "busy": _state["busy"],
+                               "site_url": site.get("site_url", ""),
+                               "site_token": bool(site.get("sync_token")),
                                **counts})
         if p.path == "/api/log":
             return self._json({"log": _state["log"], "busy": _state["busy"],
@@ -204,11 +253,34 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(p.query)
         headless = q.get("watch", ["0"])[0] != "1"
 
+        if p.path == "/api/site":
+            body = self._read_json()
+            if not body.get("url"):
+                return self._json({"ok": False, "msg": "Enter the site address."}, 400)
+            core.save_config(site_url=body["url"],
+                             sync_token=body.get("token") or None)
+            return self._json({"ok": True})
+
+        if p.path == "/api/link":
+            cfg = core.load_config()
+            url = cfg.get("site_url")
+            if not url:
+                return self._json({"ok": False, "msg": "Save the site address first."}, 400)
+            ok = _start_job(lambda log: core.link(url=url, log=log),
+                            "Computer connected")
+            return self._json({"ok": ok, "msg": "" if ok else "A job is already running."})
+
         if p.path == "/api/login":
             ok = _start_job(lambda log: core.login(fresh=False, log=log), "Login complete")
         elif p.path == "/api/fill":
             ok = _start_job(lambda log: core.fill_the_blank(headless=headless, log=log),
                             "Filled up to today")
+        elif p.path == "/api/sync":
+            ok = _start_job(lambda log: core.sync(headless=headless, log=log),
+                            "Fetched and published")
+        elif p.path == "/api/push":
+            since = "all" if q.get("all", ["0"])[0] == "1" else None
+            ok = _start_job(lambda log: core.push(since=since, log=log), "Published")
         elif p.path == "/api/history":
             ok = _start_job(lambda log: core.export_history(log=log), "Combined history written")
         elif p.path == "/api/fetch":

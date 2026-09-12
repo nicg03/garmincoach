@@ -7,7 +7,7 @@ if [ ! -d ".venv" ]; then
   echo "First run: setting up the environment (this happens once)…"
   python3 -m venv .venv || { echo "Could not create venv"; read -r; exit 1; }
   ./.venv/bin/pip install --upgrade pip >/dev/null
-  ./.venv/bin/pip install -r requirements.txt || { echo "pip install failed"; read -r; exit 1; }
+  ./.venv/bin/pip install -r requirements-local.txt || { echo "pip install failed"; read -r; exit 1; }
   ./.venv/bin/python -m playwright install chromium
 fi
 

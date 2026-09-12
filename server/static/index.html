@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2f6df6">
+<title>Garmin Sync</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<!-- Shown until a session cookie checks out. -->
+<div id="gate" class="gate hidden">
+  <form class="card gate-card" id="gate-form">
+    <h1>Garmin Sync</h1>
+    <p class="muted" id="gate-blurb">Charts and a coach for your training.
+      After signup you’ll connect your computer once so Garmin data can arrive here.</p>
+
+    <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required>
+    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+    <button class="primary" type="submit" id="gate-submit">Sign in</button>
+
+    <p class="error" id="gate-error"></p>
+    <p class="muted gate-switch">
+      <span id="gate-switch-text">New here?</span>
+      <button type="button" class="link" id="gate-switch">Create an account</button>
+    </p>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <div class="bar">
+      <h1>Garmin Sync</h1>
+      <span class="muted" id="freshness"></span>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="coach">Coach</button>
+      <button class="tab" data-tab="account">Account</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-dashboard" class="panel">
+      <!-- Replaces the whole dashboard until something has been pushed. -->
+      <div class="card setup-card hidden" id="onboarding">
+        <p class="setup-kicker">First setup</p>
+        <h2>Bring your Garmin data here</h2>
+        <p class="lede">This site shows charts and talks to a coach. It cannot
+          log into Garmin for you — that has to happen once on <em>your</em>
+          computer. After that, updates take one command.</p>
+
+        <ol class="setup">
+          <li>
+            <div class="setup-head">
+              <span class="setup-num">1</span>
+              <div>
+                <strong>Get the sync app on your computer</strong>
+                <p class="muted">Mac or Windows with Python 3.11+. Download the
+                  project, then open a terminal in that folder.</p>
+                <a class="btn-link" id="repo-link" href="#" target="_blank" rel="noreferrer">Download the sync tool →</a>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div class="setup-head">
+              <span class="setup-num">2</span>
+              <div>
+                <strong>Install it (once)</strong>
+                <p class="muted">Paste this into the terminal and wait until it finishes.</p>
+                <div class="cmd">
+                  <pre id="cmd-install">python3 -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install -r requirements-local.txt
+playwright install chromium</pre>
+                  <button type="button" class="ghost copy-cmd" data-copy="cmd-install">Copy</button>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div class="setup-head">
+              <span class="setup-num">3</span>
+              <div>
+                <strong>Sign in to Garmin (once)</strong>
+                <p class="muted">A Chromium window opens. Log in with your Garmin
+                  account, including the MFA code if asked. Close the window when it says you’re done.</p>
+                <div class="cmd">
+                  <pre id="cmd-login">python -m garmin_sync login</pre>
+                  <button type="button" class="ghost copy-cmd" data-copy="cmd-login">Copy</button>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div class="setup-head">
+              <span class="setup-num">4</span>
+              <div>
+                <strong>Connect this site</strong>
+                <p class="muted">This opens a browser tab back here. Sign in if
+                  asked, then click <em>Connect this computer</em>. No token to copy.</p>
+                <div class="cmd">
+                  <pre id="onboard-command">…</pre>
+                  <button type="button" class="ghost copy-cmd" data-copy="onboard-command">Copy</button>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div class="setup-head">
+              <span class="setup-num">5</span>
+              <div>
+                <strong>Publish your history</strong>
+                <p class="muted">Fetches what’s missing from Garmin and sends it here. Use this whenever you want fresh data.</p>
+                <div class="cmd">
+                  <pre id="cmd-sync">python -m garmin_sync sync</pre>
+                  <button type="button" class="ghost copy-cmd" data-copy="cmd-sync">Copy</button>
+                </div>
+              </div>
+            </div>
+          </li>
+        </ol>
+
+        <p class="setup-foot muted">When this page shows charts, you’re done.
+          Come back anytime — or refresh after a sync.</p>
+      </div>
+
+      <div id="dashboard-body">
+        <div class="ranges">
+          <button class="chip" data-range="30">30 days</button>
+          <button class="chip active" data-range="90">90 days</button>
+          <button class="chip" data-range="365">1 year</button>
+          <button class="chip" data-range="all">All</button>
+        </div>
+
+        <div class="cards" id="headline"></div>
+
+        <div class="card">
+          <h2>Load and form</h2>
+          <p class="muted">Bars are each day's training load. ATL is the last week
+            of fatigue, CTL the last six weeks of fitness, and form is what's left
+            over: below zero you're accumulating, above zero you're fresh.</p>
+          <div class="chart tall"><canvas id="chart-load"></canvas></div>
+        </div>
+
+        <div class="card">
+          <h2>Recovery</h2>
+          <p class="muted">Each line against its own trailing baseline, because
+            the absolute numbers only mean something relative to your normal.</p>
+          <div class="chart"><canvas id="chart-recovery"></canvas></div>
+        </div>
+
+        <div class="card">
+          <h2>Sleep</h2>
+          <div class="chart"><canvas id="chart-sleep"></canvas></div>
+        </div>
+
+        <div class="card">
+          <h2>Weekly volume</h2>
+          <div class="chart"><canvas id="chart-weeks"></canvas></div>
+        </div>
+
+        <div class="card">
+          <h2>Yesterday's load against this morning's HRV</h2>
+          <p class="muted">One point per day. A cloud drifting down to the right
+            means the hard days are costing you more than they're giving.</p>
+          <div class="chart"><canvas id="chart-scatter"></canvas></div>
+        </div>
+
+        <div class="card">
+          <h2>Recent activities</h2>
+          <div class="scroll"><table id="activities"></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-coach" class="panel hidden">
+      <div class="card hidden" id="coach-off">
+        <h2>The coach is off</h2>
+        <p class="muted">Whoever runs this site hasn't set an
+          <code>OPENAI_API_KEY</code> (or <code>ANTHROPIC_API_KEY</code>),
+          so there's nothing to ask yet.</p>
+      </div>
+
+      <div id="coach-body">
+        <div class="card">
+          <div class="bar">
+            <h2>Today's briefing</h2>
+            <button class="ghost" id="btn-rebrief">Regenerate</button>
+          </div>
+          <div class="prose" id="brief">Loading…</div>
+        </div>
+
+        <div class="card chat-card">
+          <h2>Ask about your training</h2>
+          <div class="chat" id="chat"></div>
+          <form class="composer" id="chat-form">
+            <textarea id="question" rows="2" placeholder="Is my recovery keeping up with this block?"></textarea>
+            <button class="primary" type="submit" id="btn-ask">Ask</button>
+          </form>
+          <div class="suggestions" id="suggestions"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-account" class="panel hidden">
+      <div class="card">
+        <h2>Your account</h2>
+        <div class="rows" id="account-rows"></div>
+      </div>
+
+      <div class="card setup-card">
+        <p class="setup-kicker">Computer link</p>
+        <h2>How to connect your computer</h2>
+        <p class="lede">Garmin login only works on your own machine. Link it to
+          this account once; afterwards <code>python -m garmin_sync sync</code>
+          keeps the dashboard up to date.</p>
+
+        <ol class="setup compact">
+          <li>
+            <div class="setup-head">
+              <span class="setup-num">1</span>
+              <div>
+                <strong>Install the sync tool</strong>
+                <p class="muted">If you haven’t yet, follow the steps on the
+                  Dashboard (empty state) or
+                  <a id="repo-link-account" href="#" target="_blank" rel="noreferrer">download the project</a>.</p>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div class="setup-head">
+              <span class="setup-num">2</span>
+              <div>
+                <strong>Run this on that computer</strong>
+                <p class="muted">A browser opens this site. Approve the connection.
+                  Your sync token is saved automatically — you never need to paste it.</p>
+                <div class="cmd">
+                  <pre id="account-command">…</pre>
+                  <button type="button" class="ghost copy-cmd" data-copy="account-command">Copy</button>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div class="setup-head">
+              <span class="setup-num">3</span>
+              <div>
+                <strong>Then sync whenever you want fresh data</strong>
+                <div class="cmd">
+                  <pre id="account-sync">python -m garmin_sync sync</pre>
+                  <button type="button" class="ghost copy-cmd" data-copy="account-sync">Copy</button>
+                </div>
+              </div>
+            </div>
+          </li>
+        </ol>
+
+        <details class="advanced">
+          <summary>Advanced: raw sync token</summary>
+          <p class="muted">Only if you need to configure something by hand.
+            Anyone with this string can write into your history.</p>
+          <div class="token-row">
+            <code id="token" class="token">…</code>
+            <button class="ghost" id="btn-copy-token">Copy</button>
+          </div>
+          <button class="ghost" id="btn-rotate">Replace with a new token</button>
+          <p class="muted" id="rotate-note"></p>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>Data</h2>
+        <div class="rows" id="status-rows"></div>
+      </div>
+
+      <div class="card">
+        <button class="ghost" id="btn-logout">Sign out</button>
+      </div>
+
+      <div class="card danger">
+        <h2>Delete everything</h2>
+        <p class="muted">Removes your account and every activity and day stored
+          here. The data on your own computer is untouched. This can't be
+          undone.</p>
+        <div class="composer">
+          <input type="email" id="delete-confirm" placeholder="Type your email to confirm">
+          <button class="ghost danger-button" id="btn-delete">Delete</button>
+        </div>
+        <p class="error" id="delete-error"></p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

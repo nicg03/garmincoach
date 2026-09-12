@@ -8,6 +8,10 @@ Everything the GUI needs lives here so the interface layer stays thin:
   - last_pulled_date()    the most recent day we already have
   - db_counts()           how much history is stored
 
+  - push(...)             send stored summaries to the deployed site
+  - link(...)             open the site, get a sync token approved in-browser
+  - sync(...)             fill_the_blank followed by push, the one-button path
+
 Progress is reported through an optional `log` callback (a function taking a
 single string). The GUI passes one that appends to its status pane; the CLI can
 pass `print`. Pulls run Playwright's sync API, which is fine inside a worker
@@ -15,6 +19,9 @@ thread as long as it's the only Playwright running in that thread.
 """
 from __future__ import annotations
 
+import json
+import urllib.error
+import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -24,10 +31,111 @@ DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "garmin.db"
 
 HISTORY_PATH = DATA_DIR / "garmin_history.json"
+CONFIG_PATH = DATA_DIR / "config.json"
+
+# Rows per request when pushing. Keeps the first full-history upload from
+# becoming one enormous POST, and gives the log something to report.
+PUSH_CHUNK = 250
+
+# How far back a routine push re-sends. Devices sync late and Garmin revises
+# yesterday's sleep, so overlapping a little keeps the site honest.
+PUSH_DEFAULT_DAYS = 30
 
 
 def _noop(_msg: str) -> None:
     pass
+
+
+# ---- site configuration -----------------------------------------------------
+def load_config() -> dict:
+    """Where the site lives and the token to push with.
+
+    Kept in `data/config.json`, which is gitignored along with the rest of your
+    personal data, so the token never lands in the repo.
+    """
+    if not CONFIG_PATH.exists():
+        return {}
+    try:
+        data = json.loads(CONFIG_PATH.read_text())
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_config(**values) -> dict:
+    """Merge non-empty values into the saved config."""
+    config = load_config()
+    config.update({k: v for k, v in values.items() if v})
+    DATA_DIR.mkdir(exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(config, indent=2))
+    return config
+
+
+def _site_base(url: str) -> str:
+    return (url or "").rstrip("/")
+
+
+def link(url: str | None = None, log=_noop, open_browser: bool = True) -> dict:
+    """Open the site in a browser, wait for the owner to approve, and save
+    the sync token. Other users never need to copy a token by hand."""
+    import time
+    import webbrowser
+
+    config = load_config()
+    site_url = _site_base(url or config.get("site_url", ""))
+    if not site_url:
+        raise RuntimeError(
+            "Pass the site address once:\n"
+            "  python -m garmin_sync link --url https://your-app.up.railway.app")
+
+    begin = _get_json(f"{site_url}/api/pair/begin")
+    device_code = begin["device_code"]
+    user_code = begin["user_code"]
+    interval = max(1, int(begin.get("interval") or 2))
+    deadline = time.time() + int(begin.get("expires_in") or 600)
+    pair_url = f"{site_url}/pair/{user_code}"
+
+    log(f"Open this page and sign in if asked:\n  {pair_url}")
+    log(f"Then click Connect (code {user_code}). Waiting…")
+    if open_browser:
+        try:
+            webbrowser.open(pair_url)
+        except Exception:
+            pass
+
+    while time.time() < deadline:
+        time.sleep(interval)
+        try:
+            result = _post_json(f"{site_url}/api/pair/poll", None,
+                                {"device_code": device_code})
+        except RuntimeError as e:
+            # 404 = expired/unknown; anything else is worth stopping on.
+            if "404" in str(e):
+                raise RuntimeError(
+                    "That link expired. Run `python -m garmin_sync link` again.") from None
+            raise
+        if result.get("status") == "ready":
+            token = result["sync_token"]
+            save_config(site_url=site_url, sync_token=token)
+            email = result.get("email") or "your account"
+            log(f"Linked to {site_url} as {email}. Token saved in data/config.json.")
+            return {"site_url": site_url, "email": email}
+
+    raise RuntimeError("Timed out waiting for approval. Run link again.")
+
+
+def _get_json(url: str) -> dict:
+    req = urllib.request.Request(url, method="GET",
+                                 headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30,
+                                    context=_ssl_context()) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = (e.read() or b"").decode(errors="replace")[:300]
+        raise RuntimeError(f"The site answered {e.code}. {detail}") from None
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Couldn't reach {url}: {e.reason}") from None
 
 
 def last_pulled_date() -> str | None:
@@ -179,6 +287,111 @@ def fill_the_blank(limit: int = 50, full: bool = False, headless: bool = True,
         since = today - timedelta(days=14)
         log(f"No history yet; pulling the last 14 days ({since.isoformat()} -> {today.isoformat()}).")
     return pull(since=since, limit=limit, full=full, headless=headless, log=log)
+
+
+def _ingest_url(site_url: str) -> str:
+    return site_url.rstrip("/") + "/api/ingest"
+
+
+def _ssl_context():
+    """macOS Python builds often ship without a CA bundle; certifi fills that."""
+    import ssl
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def _post_json(url: str, token: str | None, payload: dict, timeout: int = 90) -> dict:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        method="POST",
+        headers=headers,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout,
+                                    context=_ssl_context()) as response:
+            return json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        detail = (e.read() or b"").decode(errors="replace")[:300]
+        hint = {401: " -- the site doesn't recognise this token; run "
+                     "`python -m garmin_sync link` again",
+                404: " -- check the site URL",
+                503: " -- the site isn't ready to accept data yet"}.get(e.code, "")
+        raise RuntimeError(f"The site answered {e.code}{hint}. {detail}") from None
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Couldn't reach {url}: {e.reason}") from None
+
+
+def push(since: date | str | None = None, url: str | None = None,
+         token: str | None = None, log=_noop) -> dict:
+    """Send stored summaries to the deployed site.
+
+    `since` accepts a date, an ISO string, or "all" for the whole history.
+    The URL and token are remembered in `data/config.json` after the first
+    successful call, so later pushes need no arguments.
+    """
+    from .store import Store
+
+    config = load_config()
+    site_url = url or config.get("site_url", "")
+    sync_token = token or config.get("sync_token", "")
+    if not site_url or not sync_token:
+        raise RuntimeError(
+            "No site configured yet. Sign up on the site, then link this "
+            "computer once:\n"
+            "  python -m garmin_sync link --url https://your-app.up.railway.app")
+    if not DB_PATH.exists():
+        raise RuntimeError("No local history yet -- pull some data first.")
+
+    if since == "all":
+        start = None
+    elif since is None:
+        start = (date.today() - timedelta(days=PUSH_DEFAULT_DAYS)).isoformat()
+    else:
+        start = since.isoformat() if isinstance(since, date) else str(since)
+
+    store = Store(DB_PATH)
+    try:
+        day_rows = store.days_between(start, None)
+        activity_rows = store.activities_between(start, None)
+    finally:
+        store.close()
+
+    chunks = [{"days": day_rows[i:i + PUSH_CHUNK], "activities": []}
+              for i in range(0, len(day_rows), PUSH_CHUNK)]
+    chunks += [{"days": [], "activities": activity_rows[i:i + PUSH_CHUNK]}
+               for i in range(0, len(activity_rows), PUSH_CHUNK)]
+    if not chunks:
+        log("Nothing to push for that range.")
+        return {"activities": 0, "days": 0}
+
+    log(f"Publishing {len(activity_rows)} activities and {len(day_rows)} day(s) "
+        f"to {site_url} ...")
+    result: dict = {}
+    for i, chunk in enumerate(chunks, 1):
+        result = _post_json(_ingest_url(site_url), sync_token, chunk)
+        if len(chunks) > 1:
+            log(f"  sent {i}/{len(chunks)}")
+
+    save_config(site_url=site_url, sync_token=sync_token)
+    log(f"Site updated. It now holds {result.get('activities', '?')} activities "
+        f"and {result.get('days', '?')} day(s).")
+    return {"activities": len(activity_rows), "days": len(day_rows),
+            "site": result}
+
+
+def sync(limit: int = 50, headless: bool = True, url: str | None = None,
+         token: str | None = None, log=_noop) -> dict:
+    """Fetch what's missing from Garmin, then publish it. The one-button path."""
+    pulled = fill_the_blank(limit=limit, headless=headless, log=log)
+    pushed = push(url=url, token=token, log=log)
+    return {"pulled": pulled, "pushed": pushed}
 
 
 def login(fresh: bool = False, log=_noop) -> str:

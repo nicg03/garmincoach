@@ -98,9 +98,17 @@ class GarminApp:
         # primary action
         actions = ttk.Frame(self.root)
         actions.pack(fill="x", padx=pad, pady=(2, 4))
-        self.btn_fill = ttk.Button(actions, text="Fill the blank  →  today",
-                                   style="Accent.TButton", command=self.on_fill)
-        self.btn_fill.pack(fill="x")
+        self.btn_sync = ttk.Button(actions, text="Update  &  publish to my site",
+                                   style="Accent.TButton", command=self.on_sync)
+        self.btn_sync.pack(fill="x")
+
+        rowf = ttk.Frame(self.root)
+        rowf.pack(fill="x", padx=pad, pady=(8, 0))
+        ttk.Label(rowf, text="or just fetch, without publishing",
+                  style="Sub.TLabel").pack(side="left")
+        self.btn_fill = ttk.Button(rowf, text="Fill the blank", style="Ghost.TButton",
+                                   command=self.on_fill)
+        self.btn_fill.pack(side="right")
 
         # secondary row: fetch range
         row = ttk.Frame(self.root)
@@ -125,6 +133,28 @@ class GarminApp:
         self.btn_login = ttk.Button(row2, text="Log in", style="Ghost.TButton",
                                     command=self.on_login)
         self.btn_login.pack(side="right")
+
+        # my site: address + one-click link (token saved automatically)
+        site = tk.Frame(self.root, bg=CARD, highlightbackground=LINE,
+                        highlightthickness=1)
+        site.pack(fill="x", padx=pad, pady=(4, 6))
+        ttk.Label(site, text="My site", style="Card.TLabel").pack(anchor="w", padx=12, pady=(10, 2))
+        self.lbl_site = ttk.Label(
+            site, text="Paste the site address, then Connect — a browser opens "
+                       "so you can approve. No token to copy.", style="Muted.TLabel")
+        self.lbl_site.pack(anchor="w", padx=12)
+        self.url_var = tk.StringVar()
+        tk.Entry(site, textvariable=self.url_var, font=("Helvetica", 11),
+                 relief="solid", bd=1, highlightthickness=0).pack(
+            fill="x", padx=12, pady=(8, 4))
+        srow = ttk.Frame(site, style="Card.TFrame")
+        srow.pack(fill="x", padx=12, pady=(0, 12))
+        self.btn_save_site = ttk.Button(srow, text="Connect", style="Ghost.TButton",
+                                        command=self.on_link_site)
+        self.btn_save_site.pack(side="left")
+        self.btn_push = ttk.Button(srow, text="Publish everything",
+                                   style="Ghost.TButton", command=self.on_push_all)
+        self.btn_push.pack(side="right")
 
         # options
         opts = ttk.Frame(self.root)
@@ -160,7 +190,8 @@ class GarminApp:
     def _set_busy(self, busy: bool, footer: str = ""):
         self.busy = busy
         state = "disabled" if busy else "normal"
-        for b in (self.btn_fill, self.btn_fetch, self.btn_history, self.btn_login):
+        for b in (self.btn_sync, self.btn_fill, self.btn_fetch, self.btn_history,
+                  self.btn_login, self.btn_push, self.btn_save_site):
             b.configure(state=state)
         if busy:
             self.progress.pack(fill="x", padx=18, pady=(0, 4), before=self.footer)
@@ -182,6 +213,20 @@ class GarminApp:
             self.lbl_last.configure(text="Last data: none yet — log in, then Fill the blank")
         self.lbl_counts.configure(
             text=f"History: {counts['activities']} activities · {counts['days']} days stored")
+
+        site = core.load_config()
+        url = site.get("site_url", "")
+        if not self.url_var.get():
+            self.url_var.set(url)
+        if url and site.get("sync_token"):
+            self.lbl_site.configure(text=f"Publishing to {url}")
+        elif url:
+            self.lbl_site.configure(
+                text="Address saved — click Connect to finish linking.")
+        else:
+            self.lbl_site.configure(
+                text="Paste the site address, then Connect — a browser opens "
+                     "so you can approve.")
 
     # -- worker plumbing ------------------------------------------------------
     def _run(self, fn, done_msg: str):
@@ -240,6 +285,22 @@ class GarminApp:
 
     def on_history(self):
         self._run(lambda log: core.export_history(log=log), "Combined history written")
+
+    def on_sync(self):
+        headless = self._headless()
+        self._run(lambda log: core.sync(headless=headless, log=log),
+                  "Fetched and published")
+
+    def on_push_all(self):
+        self._run(lambda log: core.push(since="all", log=log), "Published")
+
+    def on_link_site(self):
+        url = self.url_var.get().strip()
+        if not url:
+            messagebox.showwarning("Garmin Sync", "Enter the address of your site.")
+            return
+        core.save_config(site_url=url)
+        self._run(lambda log: core.link(url=url, log=log), "Computer connected")
 
 
 def main():

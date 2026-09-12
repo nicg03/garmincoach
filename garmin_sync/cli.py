@@ -127,6 +127,26 @@ def cmd_pull(args):
     print("Drag that file into Claude and ask away.")
 
 
+def cmd_push(args):
+    from . import core
+
+    since = "all" if args.all else (_parse_since(args.since) if args.since else None)
+    core.push(since=since, url=args.url, token=args.token, log=print)
+
+
+def cmd_link(args):
+    from . import core
+
+    core.link(url=args.url, log=print)
+
+
+def cmd_sync(args):
+    from . import core
+
+    core.sync(limit=args.limit, headless=not args.show,
+              url=args.url, token=args.token, log=print)
+
+
 def cmd_doctor(args):
     import time
     from .auth import browser_session, ensure_logged_in, get_live_token, get_access_token
@@ -212,13 +232,37 @@ def build_parser():
     pl.add_argument("--headless", action="store_true", help="hide the browser (may fail token capture)")
     pl.set_defaults(func=cmd_pull)
 
+    ph = sub.add_parser("push", help="publish stored data to your site")
+    ph.add_argument("--url", help="site address, e.g. https://you.up.railway.app")
+    ph.add_argument("--token", help="your sync token (usually set via `link`)")
+    ph.add_argument("--since", help="e.g. 90d or 2026-01-01 (default: last 30 days)")
+    ph.add_argument("--all", action="store_true", help="push the entire history")
+    ph.set_defaults(func=cmd_push)
+
+    lk = sub.add_parser("link", help="connect this computer to the site (no token copy)")
+    lk.add_argument("--url", help="site address, e.g. https://you.up.railway.app")
+    lk.set_defaults(func=cmd_link)
+
+    sy = sub.add_parser("sync", help="fetch what's missing, then publish it")
+    sy.add_argument("--limit", type=int, default=50, help="max recent activities to scan")
+    sy.add_argument("--show", action="store_true", help="watch the browser while fetching")
+    sy.add_argument("--url", help="site address (remembered after the first run)")
+    sy.add_argument("--token", help="your sync token (usually set via `link`)")
+    sy.set_defaults(func=cmd_sync)
+
     sub.add_parser("doctor", help="diagnose login/token/API issues").set_defaults(func=cmd_doctor)
     return p
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    args.func(args)
+    try:
+        args.func(args)
+    except RuntimeError as e:
+        # Expected failures (bad token, unreachable site, stale session) read
+        # better as a message than as a traceback.
+        print(f"\n{e}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
