@@ -88,7 +88,7 @@ def link(url: str | None = None, log=_noop, open_browser: bool = True) -> dict:
             "Pass the site address once:\n"
             "  python -m garmin_sync link --url https://your-app.up.railway.app")
 
-    begin = _get_json(f"{site_url}/api/pair/begin")
+    begin = _post_json(f"{site_url}/api/pair/begin", None, {})
     device_code = begin["device_code"]
     user_code = begin["user_code"]
     interval = max(1, int(begin.get("interval") or 2))

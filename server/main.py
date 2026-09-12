@@ -175,20 +175,6 @@ def pair_begin():
         return handle.create_pairing()
 
 
-@app.get("/api/pair/{user_code}")
-def pair_status(user_code: str):
-    """What the pair page needs before anyone has clicked Approve."""
-    with db.store() as handle:
-        pairing = handle.pairing_by_user_code(user_code)
-    if not pairing:
-        return JSONResponse({"error": "Unknown or expired code."}, 404)
-    return {
-        "user_code": pairing["user_code"],
-        "expires_in": max(0, int(pairing["expires"] - time.time())),
-        "ready": pairing["user_id"] is None and not pairing["consumed"],
-    }
-
-
 @app.post("/api/pair/approve")
 def pair_approve(user_code: str = Body("", embed=True),
                  user: dict = Depends(security.current_user)):
@@ -214,6 +200,26 @@ def pair_poll(device_code: str = Body("", embed=True)):
         "status": "ready",
         "sync_token": result["sync_token"],
         "email": result["email"],
+    }
+
+
+@app.get("/api/pair/{user_code}")
+def pair_status(user_code: str):
+    """What the pair page needs before anyone has clicked Approve.
+
+    Registered after the fixed /api/pair/* routes so a typo like GET
+    /api/pair/begin cannot be mistaken for a user code.
+    """
+    if user_code.lower() in {"begin", "approve", "poll"}:
+        return JSONResponse({"error": "Use POST for this endpoint."}, 405)
+    with db.store() as handle:
+        pairing = handle.pairing_by_user_code(user_code)
+    if not pairing:
+        return JSONResponse({"error": "Unknown or expired code."}, 404)
+    return {
+        "user_code": pairing["user_code"],
+        "expires_in": max(0, int(pairing["expires"] - time.time())),
+        "ready": pairing["user_id"] is None and not pairing["consumed"],
     }
 
 
