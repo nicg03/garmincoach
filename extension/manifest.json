@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Garmin Coach Sync",
+  "version": "0.3.0",
+  "description": "Publishes your Garmin Connect data to your own Garmin Coach site, and writes planned workouts back to your watch.",
+  "permissions": ["storage", "alarms", "tabs", "scripting"],
+  "host_permissions": ["https://connect.garmin.com/*"],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Garmin Coach Sync",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://connect.garmin.com/*"],
+      "js": ["garmin.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

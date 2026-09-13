@@ -47,6 +47,13 @@ CREATE TABLE IF NOT EXISTS days (
     summary  TEXT NOT NULL,
     PRIMARY KEY (user_id, date)
 );
+CREATE TABLE IF NOT EXISTS garmin_meta (
+    user_id  INTEGER NOT NULL,
+    key      TEXT NOT NULL,
+    value    TEXT NOT NULL,
+    updated  TEXT NOT NULL,
+    PRIMARY KEY (user_id, key)
+);
 CREATE TABLE IF NOT EXISTS briefings (
     user_id  INTEGER NOT NULL,
     date     TEXT NOT NULL,
@@ -74,6 +81,60 @@ CREATE TABLE IF NOT EXISTS pairings (
 );
 CREATE INDEX IF NOT EXISTS activities_by_start ON activities(user_id, start);
 CREATE INDEX IF NOT EXISTS pairings_by_user_code ON pairings(user_code);
+
+CREATE TABLE IF NOT EXISTS athlete (
+    user_id  INTEGER PRIMARY KEY,
+    profile  TEXT NOT NULL,
+    updated  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS races (
+    user_id   INTEGER NOT NULL,
+    id        TEXT NOT NULL,
+    date      TEXT NOT NULL,
+    payload   TEXT NOT NULL,
+    PRIMARY KEY (user_id, id)
+);
+CREATE TABLE IF NOT EXISTS plans (
+    user_id   INTEGER NOT NULL,
+    id        TEXT NOT NULL,
+    race_id   TEXT,
+    status    TEXT NOT NULL,
+    payload   TEXT NOT NULL,
+    created   TEXT NOT NULL,
+    PRIMARY KEY (user_id, id)
+);
+CREATE TABLE IF NOT EXISTS plan_sessions (
+    user_id             INTEGER NOT NULL,
+    id                  TEXT NOT NULL,
+    plan_id             TEXT NOT NULL,
+    date                TEXT NOT NULL,
+    sport               TEXT,
+    kind                TEXT,
+    state               TEXT NOT NULL,
+    workout             TEXT NOT NULL,
+    est_load            REAL,
+    garmin_workout_id   INTEGER,
+    garmin_schedule_id  INTEGER,
+    activity_id         INTEGER,
+    revision            INTEGER NOT NULL DEFAULT 1,
+    payload             TEXT NOT NULL,
+    PRIMARY KEY (user_id, id)
+);
+CREATE INDEX IF NOT EXISTS sessions_by_date ON plan_sessions(user_id, date);
+CREATE INDEX IF NOT EXISTS sessions_by_state ON plan_sessions(user_id, state);
+CREATE TABLE IF NOT EXISTS workout_templates (
+    user_id  INTEGER NOT NULL,
+    id       TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    workout  TEXT NOT NULL,
+    PRIMARY KEY (user_id, id)
+);
+CREATE TABLE IF NOT EXISTS decisions (
+    user_id  INTEGER NOT NULL,
+    date     TEXT NOT NULL,
+    payload  TEXT NOT NULL,
+    PRIMARY KEY (user_id, date)
+);
 """
 
 
@@ -174,7 +235,9 @@ class Store:
         return token
 
     def delete_user(self, user_id: int) -> None:
-        for table in ("activities", "days", "briefings", "coach_usage", "pairings"):
+        for table in ("activities", "days", "garmin_meta", "briefings",
+                      "coach_usage", "pairings", "athlete", "races", "plans",
+                      "plan_sessions", "workout_templates", "decisions"):
             self.conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         self.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         self.commit()
@@ -265,10 +328,24 @@ class Store:
              summary.get("type"), json.dumps(summary)))
 
     def upsert_day(self, user_id: int, day: dict) -> None:
+        # Later chunks of a sync may carry only some of a day's fields.
+        # Replace would wipe the rest, so merge over the row that is already
+        # there and let the new keys win.
+        incoming = dict(day or {})
+        row = self.conn.execute(
+            "SELECT summary FROM days WHERE user_id = ? AND date = ?",
+            (user_id, incoming.get("date"))).fetchone()
+        if row and row["summary"]:
+            try:
+                existing = json.loads(row["summary"])
+            except json.JSONDecodeError:
+                existing = {}
+            if isinstance(existing, dict):
+                incoming = {**existing, **incoming}
         self.conn.execute(
             "INSERT INTO days (user_id, date, summary) VALUES (?,?,?) "
             "ON CONFLICT(user_id, date) DO UPDATE SET summary=excluded.summary",
-            (user_id, day.get("date"), json.dumps(day)))
+            (user_id, incoming.get("date"), json.dumps(incoming)))
 
     def last_day(self, user_id: int) -> str | None:
         row = self.conn.execute("SELECT MAX(date) d FROM days WHERE user_id = ?",
@@ -313,6 +390,33 @@ class Store:
         sql += f" ORDER BY {order or col} ASC"
         return [json.loads(r["summary"]) for r in self.conn.execute(sql, tuple(params))]
 
+    # ---- Garmin extras ------------------------------------------------------
+    def set_meta(self, user_id: int, key: str, value) -> None:
+        """Store one of the per-sync extras (zones, records, predictions).
+
+        Kept as a JSON blob per key rather than columns: Garmin adds and
+        renames these metrics regularly, and none of them is worth a
+        migration.
+        """
+        self.conn.execute(
+            "INSERT INTO garmin_meta (user_id, key, value, updated) "
+            "VALUES (?,?,?,?) ON CONFLICT(user_id, key) DO UPDATE SET "
+            "value=excluded.value, updated=excluded.updated",
+            (user_id, key, json.dumps(value), date.today().isoformat()))
+
+    def meta(self, user_id: int) -> dict:
+        rows = self.conn.execute(
+            "SELECT key, value, updated FROM garmin_meta WHERE user_id = ?",
+            (user_id,))
+        out = {}
+        for row in rows:
+            try:
+                out[row["key"]] = {"value": json.loads(row["value"]),
+                                   "updated": row["updated"]}
+            except json.JSONDecodeError:
+                continue
+        return out
+
     # ---- coach --------------------------------------------------------------
     def briefing(self, user_id: int, day: str) -> str | None:
         row = self.conn.execute(
@@ -340,6 +444,156 @@ class Store:
             (user_id, day))
         self.commit()
         return self.coach_calls(user_id, day)
+
+    # ---- athlete / races / plans -------------------------------------------
+    def get_athlete(self, user_id: int) -> dict:
+        row = self.conn.execute(
+            "SELECT profile FROM athlete WHERE user_id = ?", (user_id,)).fetchone()
+        return json.loads(row["profile"]) if row else {}
+
+    def set_athlete(self, user_id: int, profile: dict) -> dict:
+        self.conn.execute(
+            "INSERT INTO athlete (user_id, profile, updated) VALUES (?,?,?) "
+            "ON CONFLICT(user_id) DO UPDATE SET profile=excluded.profile, "
+            "updated=excluded.updated",
+            (user_id, json.dumps(profile), date.today().isoformat()))
+        self.commit()
+        return profile
+
+    def list_races(self, user_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT payload FROM races WHERE user_id = ? ORDER BY date ASC",
+            (user_id,))
+        return [json.loads(r["payload"]) for r in rows]
+
+    def upsert_race(self, user_id: int, race: dict) -> dict:
+        self.conn.execute(
+            "INSERT INTO races (user_id, id, date, payload) VALUES (?,?,?,?) "
+            "ON CONFLICT(user_id, id) DO UPDATE SET date=excluded.date, "
+            "payload=excluded.payload",
+            (user_id, race["id"], race["date"], json.dumps(race)))
+        self.commit()
+        return race
+
+    def delete_race(self, user_id: int, race_id: str) -> None:
+        self.conn.execute("DELETE FROM races WHERE user_id = ? AND id = ?",
+                          (user_id, race_id))
+        self.commit()
+
+    def race(self, user_id: int, race_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT payload FROM races WHERE user_id = ? AND id = ?",
+            (user_id, race_id)).fetchone()
+        return json.loads(row["payload"]) if row else None
+
+    def list_plans(self, user_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT payload FROM plans WHERE user_id = ? ORDER BY created DESC",
+            (user_id,))
+        return [json.loads(r["payload"]) for r in rows]
+
+    def save_plan(self, user_id: int, plan: dict) -> dict:
+        self.conn.execute(
+            "INSERT INTO plans (user_id, id, race_id, status, payload, created) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(user_id, id) DO UPDATE SET "
+            "race_id=excluded.race_id, status=excluded.status, "
+            "payload=excluded.payload",
+            (user_id, plan["id"], plan.get("race_id"), plan.get("status") or "draft",
+             json.dumps(plan), plan.get("created") or date.today().isoformat()))
+        for session in plan.get("sessions") or []:
+            self.upsert_session(user_id, plan["id"], session)
+        self.commit()
+        return plan
+
+    def get_plan(self, user_id: int, plan_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT payload FROM plans WHERE user_id = ? AND id = ?",
+            (user_id, plan_id)).fetchone()
+        if not row:
+            return None
+        plan = json.loads(row["payload"])
+        plan["sessions"] = self.sessions_for_plan(user_id, plan_id)
+        return plan
+
+    def active_plan(self, user_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT id FROM plans WHERE user_id = ? AND status = 'active' "
+            "ORDER BY created DESC LIMIT 1", (user_id,)).fetchone()
+        return self.get_plan(user_id, row["id"]) if row else None
+
+    def upsert_session(self, user_id: int, plan_id: str, session: dict) -> None:
+        self.conn.execute(
+            "INSERT INTO plan_sessions (user_id, id, plan_id, date, sport, kind, "
+            "state, workout, est_load, garmin_workout_id, garmin_schedule_id, "
+            "activity_id, revision, payload) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(user_id, id) DO UPDATE SET date=excluded.date, "
+            "sport=excluded.sport, kind=excluded.kind, state=excluded.state, "
+            "workout=excluded.workout, est_load=excluded.est_load, "
+            "garmin_workout_id=excluded.garmin_workout_id, "
+            "garmin_schedule_id=excluded.garmin_schedule_id, "
+            "activity_id=excluded.activity_id, revision=excluded.revision, "
+            "payload=excluded.payload",
+            (user_id, session["id"], plan_id, session.get("date"),
+             session.get("sport"), session.get("kind"),
+             session.get("state") or "planned",
+             json.dumps(session.get("workout") or {}),
+             session.get("est_load"), session.get("garmin_workout_id"),
+             session.get("garmin_schedule_id"), session.get("activity_id"),
+             session.get("revision") or 1, json.dumps(session)))
+
+    def sessions_for_plan(self, user_id: int, plan_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT payload FROM plan_sessions WHERE user_id = ? AND plan_id = ? "
+            "ORDER BY date ASC", (user_id, plan_id))
+        return [json.loads(r["payload"]) for r in rows]
+
+    def session(self, user_id: int, session_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT payload FROM plan_sessions WHERE user_id = ? AND id = ?",
+            (user_id, session_id)).fetchone()
+        return json.loads(row["payload"]) if row else None
+
+    def outbox(self, user_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT payload FROM plan_sessions WHERE user_id = ? AND state = "
+            "'queued' ORDER BY date ASC", (user_id,))
+        return [json.loads(r["payload"]) for r in rows]
+
+    def list_templates(self, user_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, name, workout FROM workout_templates WHERE user_id = ? "
+            "ORDER BY name", (user_id,))
+        return [{"id": r["id"], "name": r["name"],
+                 "workout": json.loads(r["workout"])} for r in rows]
+
+    def upsert_template(self, user_id: int, tmpl: dict) -> dict:
+        self.conn.execute(
+            "INSERT INTO workout_templates (user_id, id, name, workout) "
+            "VALUES (?,?,?,?) ON CONFLICT(user_id, id) DO UPDATE SET "
+            "name=excluded.name, workout=excluded.workout",
+            (user_id, tmpl["id"], tmpl["name"], json.dumps(tmpl["workout"])))
+        self.commit()
+        return tmpl
+
+    def delete_template(self, user_id: int, tmpl_id: str) -> None:
+        self.conn.execute(
+            "DELETE FROM workout_templates WHERE user_id = ? AND id = ?",
+            (user_id, tmpl_id))
+        self.commit()
+
+    def get_decision(self, user_id: int, day: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT payload FROM decisions WHERE user_id = ? AND date = ?",
+            (user_id, day)).fetchone()
+        return json.loads(row["payload"]) if row else None
+
+    def save_decision(self, user_id: int, day: str, payload: dict) -> dict:
+        self.conn.execute(
+            "INSERT INTO decisions (user_id, date, payload) VALUES (?,?,?) "
+            "ON CONFLICT(user_id, date) DO UPDATE SET payload=excluded.payload",
+            (user_id, day, json.dumps(payload)))
+        self.commit()
+        return payload
 
 
 @contextmanager

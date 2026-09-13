@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Garmin Coach Sync</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>garmin<span>coach</span></h1>
+    <p id="account" class="muted">Not connected</p>
+  </header>
+
+  <!-- Shown until a site is linked. -->
+  <section id="setup" class="card hidden">
+    <h2>Connect your site</h2>
+    <p class="muted">
+      Paste the address of your Garmin Coach site. A tab opens so you can
+      approve this browser, and nothing needs copying by hand.
+    </p>
+    <input id="site-url" type="url" placeholder="https://your-app.up.railway.app"
+           autocomplete="off" spellcheck="false">
+    <button id="link" class="primary">Connect</button>
+  </section>
+
+  <!-- Shown once linked. -->
+  <section id="main" class="card hidden">
+    <div id="last" class="stat">
+      <span class="stat-label">Last sync</span>
+      <span id="last-value" class="stat-value">never</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">On the site</span>
+      <span id="total-value" class="stat-value">&mdash;</span>
+    </div>
+
+    <button id="sync" class="primary">Sync now</button>
+    <button id="backfill" class="secondary">Load all history</button>
+
+    <label class="toggle">
+      <input id="auto" type="checkbox">
+      <span>Sync by itself every few hours</span>
+    </label>
+
+    <p id="status" class="status"></p>
+    <button id="open-site" class="link">Open my site</button>
+    <button id="unlink" class="link danger">Disconnect</button>
+  </section>
+
+  <p id="error" class="error"></p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

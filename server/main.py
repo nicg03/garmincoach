@@ -22,12 +22,13 @@ from typing import Any
 import time
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from garmin_sync import metrics
 
-from . import coach, config, db, security
+from . import coach, config, db, garmin_export, garmin_fetch, ingest, security
 from .store import EmailTaken
 
 STATIC_DIR = config.ROOT / "server" / "static"
@@ -64,6 +65,12 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Garmin Sync", docs_url=None, redoc_url=None, lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -91,6 +98,13 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/styles.css", include_in_schema=False)
+@app.get("/app.js", include_in_schema=False)
+def legacy_static(request: Request):
+    name = request.url.path.rsplit("/", 1)[-1]
+    return FileResponse(STATIC_DIR / name)
+
+
 @app.get("/api/config")
 def site_config():
     """What the page needs before anyone has signed in."""
@@ -99,6 +113,7 @@ def site_config():
         "coach": config.coach_enabled(),
         "min_password": config.MIN_PASSWORD,
         "repo": config.SYNC_REPO_URL,
+        "extension_zip": "/extension.zip",
     }
 
 
@@ -312,6 +327,186 @@ def dashboard_metrics(days: int | None = Query(None, ge=1, le=3650),
     return payload
 
 
+# ---- performance, plans, workouts ------------------------------------------
+from . import planning
+
+
+@app.get("/api/performance")
+def performance_view(user: dict = Depends(security.current_user)):
+    from garmin_sync.performance import build as build_perf
+    _days, activities = db.window(user["id"], None, None)
+    return build_perf(activities, db.meta(user["id"]))
+
+
+@app.get("/api/athlete")
+def get_athlete(user: dict = Depends(security.current_user)):
+    return planning.athlete(user["id"])
+
+
+@app.put("/api/athlete")
+def put_athlete(payload: dict[str, Any] = Body(...),
+                user: dict = Depends(security.current_user)):
+    return planning.save_athlete(user["id"], payload)
+
+
+@app.get("/api/races")
+def get_races(user: dict = Depends(security.current_user)):
+    return {"races": planning.list_races(user["id"])}
+
+
+@app.post("/api/races")
+def post_race(payload: dict[str, Any] = Body(...),
+              user: dict = Depends(security.current_user)):
+    try:
+        return planning.save_race(user["id"], payload)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, 400)
+
+
+@app.delete("/api/races/{race_id}")
+def remove_race(race_id: str, user: dict = Depends(security.current_user)):
+    planning.delete_race(user["id"], race_id)
+    return {"ok": True}
+
+
+@app.get("/api/plan")
+def get_plan(plan_id: str | None = None,
+             user: dict = Depends(security.current_user)):
+    plan = planning.handle_get_plan(user["id"], plan_id)
+    if not plan:
+        return {"plan": None, "adherence": planning.adherence(user["id"])}
+    return {"plan": plan, "adherence": planning.adherence(user["id"])}
+
+
+@app.post("/api/plan/generate")
+def post_plan(payload: dict[str, Any] = Body(...),
+              user: dict = Depends(security.current_user)):
+    race_id = payload.get("race_id")
+    if not race_id:
+        return JSONResponse({"error": "Pick a race first."}, 400)
+    try:
+        plan = planning.generate_plan(
+            user["id"], race_id,
+            extras=payload.get("extras"),
+            notes=payload.get("notes"))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, 400)
+    if payload.get("adjust") and payload.get("notes"):
+        planning.llm_patches(user["id"], plan["id"], payload["notes"])
+        plan = planning.handle_get_plan(user["id"], plan["id"])
+    return {"plan": plan}
+
+
+@app.post("/api/plan/{plan_id}/activate")
+def activate(plan_id: str, user: dict = Depends(security.current_user)):
+    try:
+        return {"plan": planning.activate_plan(user["id"], plan_id)}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, 400)
+
+
+@app.post("/api/plan/{plan_id}/patch")
+def patch(plan_id: str, payload: dict[str, Any] = Body(...),
+          user: dict = Depends(security.current_user)):
+    try:
+        return {"plan": planning.patch_plan(user["id"], plan_id, payload)}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, 400)
+
+
+@app.patch("/api/plan/session/{session_id}")
+def patch_session(session_id: str, payload: dict[str, Any] = Body(...),
+                  user: dict = Depends(security.current_user)):
+    try:
+        return planning.update_session(user["id"], session_id, payload)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, 400)
+
+
+@app.get("/api/workouts")
+def get_workouts(user: dict = Depends(security.current_user)):
+    from garmin_sync.performance import build as build_perf
+    _days, activities = db.window(user["id"], None, None)
+    paces = build_perf(activities).get("paces") or {}
+    return {"workouts": planning.templates(user["id"], paces)}
+
+
+@app.post("/api/workouts")
+def post_workout(payload: dict[str, Any] = Body(...),
+                 user: dict = Depends(security.current_user)):
+    try:
+        return planning.save_template(user["id"], payload)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, 400)
+
+
+@app.post("/api/workout/preview")
+def preview_workout(payload: dict[str, Any] = Body(...),
+                    user: dict = Depends(security.current_user)):
+    from garmin_sync.garmin_workout import to_garmin
+    from garmin_sync.workout_dsl import describe, validate
+    try:
+        clean = validate(payload.get("workout") or payload)
+        return {"workout": clean, "garmin": to_garmin(clean),
+                "description": describe(clean)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, 400)
+
+
+@app.post("/api/workout/schedule")
+def schedule_one(payload: dict[str, Any] = Body(...),
+                 user: dict = Depends(security.current_user)):
+    """Queue a one-off workout on a date (no full plan required)."""
+    from garmin_sync.workout_dsl import validate
+    try:
+        workout = validate(payload.get("workout") or payload)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, 400)
+    day = (payload.get("date") or date.today().isoformat())[:10]
+    session = {
+        "id": str(__import__("uuid").uuid4()),
+        "date": day,
+        "sport": workout["sport"],
+        "kind": workout.get("kind") or "easy",
+        "workout": workout,
+        "est_load": workout.get("est_load"),
+        "state": "queued",
+        "revision": 1,
+    }
+    with db.store() as handle:
+        plan = handle.active_plan(user["id"])
+        plan_id = (plan or {}).get("id") or "adhoc"
+        if not plan:
+            handle.save_plan(user["id"], {
+                "id": plan_id, "status": "active", "race_id": None,
+                "created": date.today().isoformat(), "sessions": [session],
+            })
+        else:
+            session["plan_id"] = plan_id
+            handle.upsert_session(user["id"], plan_id, session)
+            handle.commit()
+    return {"session": session}
+
+
+@app.get("/api/day/decide")
+def get_decision(user: dict = Depends(security.current_user)):
+    return planning.decide_today(user["id"])
+
+
+@app.post("/api/day/decide")
+def post_decision(payload: dict[str, Any] = Body(None),
+                  user: dict = Depends(security.current_user)):
+    return planning.apply_decision(user["id"], (payload or {}).get("action"))
+
+
+@app.get("/api/races/{race_id}/review")
+def review_race(race_id: str, user: dict = Depends(security.current_user)):
+    try:
+        return planning.race_review(user["id"], race_id)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, 400)
+
+
 # ---- coach ------------------------------------------------------------------
 def _check_coach(user: dict) -> None:
     if not config.coach_enabled():
@@ -362,12 +557,171 @@ def chat(payload: dict[str, Any] = Body(...),
 
 # ---- ingest -----------------------------------------------------------------
 @app.post("/api/ingest")
-def ingest(payload: dict[str, Any] = Body(...),
-           user: dict = Depends(security.user_from_sync_token)):
-    """Receive a bundle pushed by someone's local sync."""
-    activities_in = payload.get("activities") or []
-    days_in = payload.get("days") or []
-    if not isinstance(activities_in, list) or not isinstance(days_in, list):
-        return JSONResponse({"error": "activities and days must be lists"}, 400)
-    stored = db.ingest(user["id"], activities_in, days_in)
+def push(payload: dict[str, Any] = Body(...),
+         user: dict = Depends(security.user_from_sync_token)):
+    """Receive a bundle from a local sync or from the browser extension.
+
+    The local sync sends finished summaries; the extension sends Garmin's raw
+    answers under `results` and this end does the summarizing. Both paths land
+    in the same rows.
+    """
+    if not isinstance(payload, dict):
+        return JSONResponse({"error": "Expected a JSON object."}, 400)
+
+    results = payload.get("results")
+    if isinstance(results, dict):
+        payload = {**payload, "raw": garmin_fetch.regroup(results)}
+
+    for key in ("activities", "days"):
+        if key in payload and not isinstance(payload[key], list):
+            return JSONResponse({"error": f"{key} must be a list"}, 400)
+
+    activities, days, meta = ingest.normalise(payload)
+    stored = db.ingest(user["id"], activities, days, meta)
     return {"ok": True, "stored": stored, **db.status(user["id"])}
+
+
+# ---- the browser extension --------------------------------------------------
+# Authenticated by sync token, like ingest: the extension runs unattended and
+# has no session cookie for this site.
+@app.get("/api/sync/state")
+def sync_state(user: dict = Depends(security.user_from_sync_token)):
+    """What the extension needs to decide how much to fetch."""
+    info = db.status(user["id"])
+    return {
+        "email": user["email"],
+        "last": info.get("last"),
+        "first": info.get("first"),
+        "activities": info.get("activities"),
+        "days": info.get("days"),
+    }
+
+
+@app.post("/api/sync/fetchplan")
+def sync_fetchplan(payload: dict[str, Any] = Body(...),
+                   user: dict = Depends(security.user_from_sync_token)):
+    """Given the Garmin profile, answer with everything worth fetching.
+
+    The extension has no idea which endpoints exist or which dates are
+    missing; it just walks the list this returns.
+    """
+    profile = payload.get("profile")
+    pages = payload.get("pages")
+    pages = pages if isinstance(pages, int) and 0 <= pages <= 80 else 1
+    limit = payload.get("days")
+    limit = (limit if isinstance(limit, int) and 1 <= limit <= 400
+             else garmin_fetch.FIRST_RUN_DAYS)
+    activity_start = payload.get("activity_start")
+    activity_start = (activity_start if isinstance(activity_start, int)
+                      and activity_start >= 0 else 0)
+
+    info = db.status(user["id"])
+    backfill = bool(payload.get("backfill"))
+    before = info.get("first") if backfill else None
+    explicit = payload.get("before")
+    if isinstance(explicit, str) and len(explicit) >= 10:
+        before = explicit[:10]
+        backfill = True
+
+    try:
+        if backfill and before:
+            plan = garmin_fetch.build_plan(
+                profile, backfill_before=before, pages=pages, limit=limit,
+                activity_start=activity_start,
+                include_meta=bool(payload.get("meta")))
+        else:
+            last = None if payload.get("full") else info.get("last")
+            plan = garmin_fetch.build_plan(
+                profile, last=last, pages=max(pages, 1), limit=limit,
+                activity_start=activity_start, include_meta=True)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, 400)
+    return plan
+
+
+@app.get("/api/sync/outbox")
+def sync_outbox(user: dict = Depends(security.user_from_sync_token)):
+    """Garmin write operations waiting for the extension."""
+    from . import planning
+    return {"ops": planning.outbox_ops(user["id"])}
+
+
+@app.post("/api/sync/ack")
+def sync_ack(payload: dict[str, Any] = Body(...),
+             user: dict = Depends(security.user_from_sync_token)):
+    from . import planning
+    results = payload.get("results") or payload.get("acks") or []
+    if not isinstance(results, list):
+        return JSONResponse({"error": "results must be a list"}, 400)
+    return planning.ack_ops(user["id"], results)
+
+
+# ---- importing Garmin's own export -----------------------------------------
+@app.post("/api/import/garmin-export")
+async def import_garmin_export(request: Request,
+                               user: dict = Depends(security.current_user)):
+    """Load a full history from the zip Garmin emails you on request.
+
+    The whole point is that this needs nothing installed: request the export
+    from your Garmin account, drop the zip here, and years of history land in
+    one go. Streamed to a temporary file rather than held in memory, because
+    these archives run to hundreds of megabytes.
+    """
+    import tempfile
+    from pathlib import Path
+
+    size = 0
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    try:
+        try:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > garmin_export.MAX_UPLOAD_BYTES:
+                    return JSONResponse(
+                        {"error": "That file is larger than "
+                                  f"{garmin_export.MAX_UPLOAD_BYTES // (1024 * 1024)} MB."},
+                        413)
+                tmp.write(chunk)
+        finally:
+            tmp.close()
+
+        if not size:
+            return JSONResponse({"error": "No file arrived."}, 400)
+        try:
+            found = garmin_export.read_archive(Path(tmp.name))
+        except garmin_export.NotAnExport as e:
+            return JSONResponse({"error": str(e)}, 400)
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
+
+    stored = db.ingest(user["id"], found.activities, found.days)
+    return {"ok": True, "stored": stored, "report": found.report,
+            **db.status(user["id"])}
+
+
+@app.get("/api/meta")
+def garmin_meta(user: dict = Depends(security.current_user)):
+    """Zones, personal records and Garmin's own race predictions."""
+    return db.meta(user["id"])
+
+
+@app.get("/extension.zip", include_in_schema=False)
+def extension_zip():
+    """A downloadable copy of the browser extension, for Load unpacked."""
+    import io
+    import zipfile
+
+    root = config.ROOT / "extension"
+    if not root.is_dir():
+        raise HTTPException(404, "Extension pack is missing from this deploy.")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and path.name != ".DS_Store":
+                zf.write(path, f"garmin-coach-extension/{path.relative_to(root).as_posix()}")
+    return Response(
+        buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition":
+                 'attachment; filename="garmin-coach-extension.zip"'},
+    )

@@ -16,16 +16,16 @@ const state = {
 };
 
 const COLORS = {
-  load: 'rgba(47, 109, 246, .35)',
-  atl: '#e08c2c',
-  ctl: '#1f9d5b',
-  form: '#7c5cd6',
-  hrv: '#12a5a5',
-  rhr: '#d64545',
-  score: '#2f6df6',
-  deep: '#2457cc',
-  light: '#7ba3f8',
-  rem: '#12a5a5',
+  load: 'rgba(33, 84, 255, .22)',
+  atl: '#2154ff',
+  ctl: '#0f8a5a',
+  form: '#7c5cff',
+  hrv: '#0e9aa0',
+  rhr: '#d63b3b',
+  score: '#111111',
+  deep: '#1b3a7a',
+  light: '#8aa8ff',
+  rem: '#0e9aa0',
 };
 
 const SUGGESTIONS = [
@@ -91,7 +91,7 @@ function setMode(mode) {
   $('#password').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
   $('#gate-blurb').textContent = signup
     ? `Pick a password of at least ${state.site.min_password || 8} characters.`
-    : 'Your training data, and someone to think about it with.';
+    : 'Your training data, brought over by a browser extension.';
   $('#gate-error').textContent = '';
 }
 
@@ -136,6 +136,10 @@ $$('.tab').forEach((tab) => tab.addEventListener('click', () => {
   if (tab.dataset.tab === 'coach' && state.status.coach && !$('#brief').dataset.loaded) {
     loadBrief();
   }
+  if (tab.dataset.tab === 'plan') loadPlanTab();
+  if (tab.dataset.tab === 'workouts') loadWorkouts();
+  if (tab.dataset.tab === 'performance') loadPerformance();
+  if (tab.dataset.tab === 'account') loadAthlete();
 }));
 
 $$('.chip').forEach((chip) => chip.addEventListener('click', () => {
@@ -185,7 +189,9 @@ function renderHeadline(h) {
   const rhrTone = h.resting_hr_delta > 2 ? 'warn' : h.resting_hr_delta < 0 ? 'good' : '';
 
   $('#headline').innerHTML = [
-    tile('Form', fmt(h.form), formNote, formTone),
+    tile('Form (TSB)', fmt(h.form),
+      [formNote, h.ctl != null ? `CTL ${fmt(h.ctl)}` : '', h.atl != null ? `ATL ${fmt(h.atl)}` : '']
+        .filter(Boolean).join(' · '), formTone),
     tile('Load ratio', fmt(h.acwr, 2), ratioNote, ratioTone),
     tile('HRV', fmt(h.hrv), h.hrv_delta !== null && h.hrv_delta !== undefined
       ? `${signed(h.hrv_delta)} vs baseline` : (h.hrv_status || ''), hrvTone),
@@ -217,8 +223,11 @@ function baseOptions(extra = {}) {
 }
 
 function draw(id, config) {
+  if (!window.Chart) return;
+  const canvas = $('#' + id);
+  if (!canvas) return;
   if (state.charts[id]) state.charts[id].destroy();
-  state.charts[id] = new Chart($('#' + id), config);
+  state.charts[id] = new Chart(canvas, config);
 }
 
 function renderCharts(data) {
@@ -391,6 +400,78 @@ function linkCommand() {
   return `python -m garmin_sync link --url ${location.origin}`;
 }
 
+function siteOrigin() {
+  return location.origin;
+}
+
+function bindDropzone(zone, fileInput, status, browse) {
+  if (!zone || !fileInput) return;
+
+  const pick = () => fileInput.click();
+  zone.addEventListener('click', (event) => {
+    if (event.target === browse) return;
+    pick();
+  });
+  zone.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      pick();
+    }
+  });
+  if (browse) browse.addEventListener('click', (event) => {
+    event.stopPropagation();
+    pick();
+  });
+  zone.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    zone.classList.add('drag');
+  });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+  zone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    zone.classList.remove('drag');
+    const file = event.dataTransfer && event.dataTransfer.files[0];
+    if (file) importExport(file, status);
+  });
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (file) importExport(file, status);
+    fileInput.value = '';
+  });
+}
+
+async function importExport(file, status) {
+  if (!file) return;
+  const name = file.name || 'export.zip';
+  if (!/\.zip$/i.test(name) && file.type !== 'application/zip') {
+    if (status) status.textContent = 'That needs to be the zip Garmin emailed you.';
+    return;
+  }
+  if (status) status.textContent = `Reading ${name}… this can take a minute.`;
+  try {
+    const response = await fetch('/api/import/garmin-export', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/zip' },
+      body: file,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body.error || body.detail || 'Import failed.');
+    }
+    const stored = body.stored || {};
+    const report = body.report || {};
+    if (status) {
+      status.textContent =
+        `Imported ${stored.activities || report.activities || 0} activities ` +
+        `and ${stored.days || report.days || 0} days.`;
+    }
+    await boot();
+  } catch (error) {
+    if (status) status.textContent = error.message;
+  }
+}
+
 function renderAccount(status) {
   const user = status.user || {};
   const rows = [
@@ -405,6 +486,8 @@ function renderAccount(status) {
     .map(([k, v]) => `<div><span>${k}</span><span>${v}</span></div>`).join('');
 
   $('#token').textContent = user.sync_token || '';
+  const origin = $('#account-origin');
+  if (origin) origin.textContent = siteOrigin();
   $('#account-command').textContent = linkCommand();
   $('#delete-confirm').placeholder = `Type ${user.email} to confirm`;
 
@@ -606,7 +689,757 @@ $$('#suggestions button').forEach((button) => {
   button.addEventListener('click', () => ask(button.textContent));
 });
 
+// ---- plan / workouts / performance -----------------------------------------
+function sessionKind(s) {
+  return (s.kind || s.workout && s.workout.kind || '').replace(/_/g, ' ');
+}
+
+async function loadPlanTab() {
+  const [races, planBody, decision, perf] = await Promise.all([
+    api('/api/races'),
+    api('/api/plan'),
+    api('/api/day/decide').catch(() => null),
+    api('/api/performance').catch(() => ({})),
+  ]);
+  state.races = races.races || [];
+  state.plan = planBody.plan;
+  state.adherence = planBody.adherence;
+  state.performance = perf;
+  renderRaces();
+  renderPlan();
+  renderDecision(decision);
+}
+
+function renderDecision(decision) {
+  if (!decision) {
+    $('#decide-text').textContent = 'No session planned for today.';
+    $('#decide-actions').innerHTML = '';
+    return;
+  }
+  const wo = decision.session && decision.session.workout;
+  const name = wo && wo.name || (decision.session && decision.session.kind) || 'No session';
+  const applied = decision.applied ? ` Applied: ${decision.applied}.` : '';
+  const desc = (decision.session && (decision.session.description || (wo && wo.description))) || '';
+  $('#decide-text').textContent =
+    `${name}: ${decision.reason} Suggested: ${decision.action}.${applied}` +
+    (desc ? ` ${desc}` : '');
+  $('#decide-actions').innerHTML = ['keep', 'ease', 'swap', 'rest'].map((a) =>
+    `<button type="button" class="ghost" data-act="${a}">${a}</button>`).join('');
+  $$('#decide-actions button').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await post('/api/day/decide', { action: btn.dataset.act });
+      loadPlanTab();
+    });
+  });
+}
+
+function raceFeasibility(race) {
+  const p = state.performance;
+  if (!p || !race.goal_time || !race.distance_m) return '';
+  const pred = (p.predictions || []).find((row) =>
+    Math.abs((row.distance_m || 0) - race.distance_m) < 800);
+  const expected = (pred && (pred.vdot_s || pred.riegel_s)) || null;
+  if (!expected) return '';
+  const parts = String(race.goal_time).split(':').map(Number);
+  let goal = 0;
+  if (parts.length === 3) goal = parts[0] * 3600 + parts[1] * 60 + parts[2];
+  else if (parts.length === 2) goal = parts[0] * 60 + parts[1];
+  if (!goal) return '';
+  const pct = (goal - expected) / expected;
+  if (pct > 0.03) return 'comfortable (slower than VDOT by >3%)';
+  if (pct > -0.03) return 'on pace (within 3% of VDOT)';
+  if (pct > -0.08) return 'stretch (3–8% faster than VDOT)';
+  return 'ambitious (>8% faster than VDOT)';
+}
+
+function renderRaces() {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = (state.races || []).map((r) => {
+    const feas = raceFeasibility(r);
+    const past = r.date <= today;
+    return `<tr>
+      <td>${r.date}</td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.priority || 'A')}</td>
+      <td>${r.distance_m ? Math.round(r.distance_m / 1000) + ' km' : ''}</td>
+      <td>${escapeHtml(r.goal_time || '')}</td>
+      <td>${escapeHtml(feas)}</td>
+      <td>
+        ${past ? `<button type="button" class="ghost" data-review="${escapeHtml(r.id)}">Review</button>` : ''}
+        <button type="button" class="ghost" data-del="${escapeHtml(r.id)}">Remove</button>
+      </td>
+    </tr>`;
+  }).join('');
+  $('#race-table').innerHTML =
+    '<thead><tr><th>Date</th><th>Name</th><th>Pri</th><th>Dist</th><th>Goal</th><th>Fit</th><th></th></tr></thead>'
+    + `<tbody>${rows || '<tr><td colspan="7">No races yet.</td></tr>'}</tbody>`;
+  $$('#race-table [data-del]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await api('/api/races/' + btn.dataset.del, { method: 'DELETE' });
+      loadPlanTab();
+    });
+  });
+  $$('#race-table [data-review]').forEach((btn) => {
+    btn.addEventListener('click', () => loadRaceReview(btn.dataset.review));
+  });
+  $('#plan-race').innerHTML = (state.races || []).map((r) =>
+    `<option value="${r.id}">${escapeHtml(r.name)} (${r.date})</option>`).join('');
+}
+
+async function loadRaceReview(id) {
+  const host = $('#race-review');
+  if (!host) return;
+  try {
+    const body = await api('/api/races/' + id + '/review');
+    const r = body.result || {};
+    const f = body.feasibility || {};
+    const splits = (body.splits || []).map((s) => s.label + ': ' + (s.pace || '')).join(' · ');
+    host.innerHTML =
+      `<strong>${escapeHtml((body.race && body.race.name) || 'Race')}</strong> — ` +
+      `goal ${escapeHtml(r.goal || '—')}, actual ${escapeHtml(r.actual || 'not raced yet')}` +
+      (r.vs_goal ? `, ${r.vs_goal}` : '') +
+      (f.label ? `. ${escapeHtml(f.label)}` : '') +
+      (splits ? `. Splits: ${escapeHtml(splits)}` : '');
+  } catch (error) {
+    host.textContent = error.message;
+  }
+}
+
+function renderPlan() {
+  const plan = state.plan;
+  const sheet = $('#session-sheet');
+  if (sheet) sheet.classList.add('hidden');
+  if (!plan) {
+    $('#plan-rationale').textContent = 'Generate a plan from a race.';
+    $('#plan-headline').innerHTML = '';
+    if ($('#pace-board')) $('#pace-board').innerHTML = '';
+    if ($('#pace-source')) $('#pace-source').textContent = '';
+    if ($('#plan-weeks')) $('#plan-weeks').innerHTML = '';
+    $('#plan-adherence').textContent = '';
+    return;
+  }
+  $('#plan-rationale').textContent = plan.rationale || '';
+  const h = plan.headline || {};
+  $('#plan-headline').innerHTML = [
+    tile('Weeks', h.weeks, h.short_block ? `short vs ${h.ideal_weeks} ideal` : (h.family || '')),
+    tile('Sessions', h.sessions, ''),
+    tile('VDOT', fmt(h.vdot, 1), ''),
+    tile('Peak km/wk', fmt(h.weekly_km_peak, 0), `now ${fmt(h.weekly_km_now, 0)}`),
+    tile('CTL at race', fmt(h.ctl_at_race), `now ${fmt(h.ctl_now)}`),
+  ].join('');
+  renderPaceBoard(h.paces || (state.performance && state.performance.paces) || {});
+  const adh = state.adherence || {};
+  $('#plan-adherence').textContent = adh.planned
+    ? `Adherence: ${adh.completed}/${adh.planned} done`
+      + (adh.skipped ? `, ${adh.skipped} skipped` : '')
+    : '';
+  renderWeekCalendar(plan);
+  drawProjected(plan.projected || []);
+}
+
+function renderPaceBoard(paces) {
+  const host = $('#pace-board');
+  if (!host) return;
+  const bands = paces.bands || {};
+  const rows = [
+    ['easy', 'Easy'],
+    ['marathon', 'M'],
+    ['threshold', 'T'],
+    ['interval', 'I'],
+    ['rep', 'R'],
+    ['goal', 'Goal'],
+  ];
+  host.innerHTML = rows.map(([key, label]) => {
+    const b = bands[key] || {};
+    const mid = b.mid || paces[key];
+    if (!mid) return '';
+    const rng = (b.high && b.low && b.high !== b.low) ? `${b.high}–${b.low}` : '';
+    return `<div class="pace-chip"><span class="k">${label}</span>` +
+      `<span class="v">${escapeHtml(mid)}</span>` +
+      (rng ? `<span class="r">${escapeHtml(rng)}/km</span>` : '') +
+      `</div>`;
+  }).join('');
+  const src = $('#pace-source');
+  if (src) {
+    const from = (state.performance && state.performance.vdot_from) || {};
+    src.textContent = paces.note
+      || (paces.source === 'vdot' && from.mark
+        ? `Paces from VDOT ${fmt(paces.vdot, 1)} (${from.mark} ${from.time || ''}). Easy is a range; T/I/R are ± a few s/km.`
+        : (paces.source ? `Paces from ${paces.source}.` : ''));
+  }
+}
+
+function mondayOf(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  const day = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - day);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+function renderWeekCalendar(plan) {
+  const host = $('#plan-weeks');
+  if (!host) return;
+  const sessions = plan.sessions || [];
+  const weekMeta = {};
+  (plan.weeks || []).forEach((w) => { weekMeta[w.start] = w; });
+  const groups = [];
+  const index = {};
+  sessions.forEach((s) => {
+    const key = mondayOf(s.date);
+    if (!index[key]) {
+      index[key] = [];
+      groups.push(key);
+    }
+    index[key].push(s);
+  });
+  const dow = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  host.innerHTML = groups.map((key) => {
+    const meta = weekMeta[key] || {};
+    const byDow = {};
+    (index[key] || []).forEach((s) => {
+      const d = new Date(s.date + 'T00:00:00');
+      byDow[(d.getDay() + 6) % 7] = s;
+    });
+    const cells = dow.map((label, i) => {
+      const s = byDow[i];
+      if (!s) {
+        return `<button type="button" class="day-cell empty" disabled>
+          <span class="dow">${label}</span><span class="nm">—</span></button>`;
+      }
+      const wo = s.workout || {};
+      const km = s.distance_km != null ? fmt(s.distance_km, 1) + ' km' : '';
+      const pace = (wo.targets && wo.targets.work) || '';
+      return `<button type="button" class="day-cell" data-sid="${escapeHtml(s.id)}">
+        <span class="dow">${label} ${s.date.slice(8)}</span>
+        <span class="nm">${escapeHtml(wo.name || sessionKind(s))}</span>
+        <span class="meta">${escapeHtml([km, pace, s.phase].filter(Boolean).join(' · '))}</span>
+      </button>`;
+    }).join('');
+    return `<div class="week-block">
+      <h3>${key}<span>${escapeHtml(meta.phase || '')}` +
+      `${meta.target_km ? ` · ${fmt(meta.target_km, 0)} km` : ''}</span></h3>
+      <div class="week-grid">${cells}</div>
+    </div>`;
+  }).join('');
+  $$('#plan-weeks [data-sid]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      $$('#plan-weeks .day-cell').forEach((el) => el.classList.remove('active'));
+      btn.classList.add('active');
+      const session = sessions.find((s) => s.id === btn.dataset.sid);
+      showSessionSheet(session);
+    });
+  });
+}
+
+function stepRows(steps, prefix) {
+  const rows = [];
+  (steps || []).forEach((step, i) => {
+    if (step.kind === 'repeat') {
+      rows.push(`<tr><td colspan="3"><strong>${step.times}× set</strong></td></tr>`);
+      rows.push(...stepRows(step.steps || [], `${prefix}${i}.`));
+      return;
+    }
+    const dur = step.duration || {};
+    let when = dur.value + (dur.unit ? ' ' + dur.unit : '');
+    if (dur.type === 'distance' && dur.unit === 'm') when = dur.value + ' m';
+    if (dur.type === 'distance' && dur.unit === 'km') when = dur.value + ' km';
+    if (dur.type === 'time' && dur.unit === 'min') when = dur.value + ' min';
+    if (dur.type === 'time' && dur.unit === 's') when = dur.value + ' s';
+    const t = step.target || {};
+    let pace = '';
+    if (t.type === 'pace') {
+      pace = (t.low && t.high && t.low !== t.high) ? `${t.high}–${t.low}/km` : `${t.low || t.high || ''}/km`;
+    } else if (t.type === 'hr_zone') {
+      pace = 'HR Z' + t.zone;
+    }
+    rows.push(`<tr><td>${escapeHtml(step.intensity || '')}</td><td>${escapeHtml(String(when))}</td><td>${escapeHtml(pace)}</td></tr>`);
+  });
+  return rows;
+}
+
+function showSessionSheet(session) {
+  const host = $('#session-sheet');
+  if (!host || !session) return;
+  const wo = session.workout || {};
+  const steps = stepRows(wo.steps || []).join('');
+  host.classList.remove('hidden');
+  host.innerHTML = `
+    <h3>${escapeHtml(wo.name || sessionKind(session))}</h3>
+    <p class="purpose muted">${escapeHtml(session.purpose || wo.purpose || '')}</p>
+    <p>${escapeHtml(session.description || wo.description || '')}</p>
+    <table class="session-steps">
+      <thead><tr><th>Step</th><th>Duration</th><th>Pace</th></tr></thead>
+      <tbody>${steps || '<tr><td colspan="3">No structure.</td></tr>'}</tbody>
+    </table>
+    <div class="row-actions">
+      <button type="button" class="ghost" data-ease="${escapeHtml(session.id)}">Ease</button>
+      <button type="button" class="ghost" data-rest="${escapeHtml(session.id)}">Rest</button>
+      <button type="button" class="ghost" data-skip="${escapeHtml(session.id)}">Skip</button>
+    </div>`;
+  host.querySelector('[data-ease]').addEventListener('click', () => patchSession(session.id, 'ease'));
+  host.querySelector('[data-rest]').addEventListener('click', () => patchSession(session.id, 'rest'));
+  host.querySelector('[data-skip]').addEventListener('click', () => patchSession(session.id, 'skip'));
+  host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function patchSession(id, op) {
+  if (!state.plan) return;
+  await post(`/api/plan/${state.plan.id}/patch`, { op, id });
+  loadPlanTab();
+}
+
+function drawProjected(series) {
+  const canvas = $('#chart-projected');
+  if (!canvas || !window.Chart) return;
+  if (state.charts.projected) state.charts.projected.destroy();
+  state.charts.projected = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: series.map((r) => shortDate(r.date)),
+      datasets: [
+        { label: 'Load', data: series.map((r) => r.load), borderColor: COLORS.load, backgroundColor: COLORS.load, fill: true, tension: .2 },
+        { label: 'ATL', data: series.map((r) => r.atl), borderColor: COLORS.atl, tension: .3, pointRadius: 0 },
+        { label: 'CTL', data: series.map((r) => r.ctl), borderColor: COLORS.ctl, tension: .3, pointRadius: 0 },
+      ],
+    },
+    options: baseOptions(),
+  });
+}
+
+$('#race-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await post('/api/races', {
+    name: $('#race-name').value,
+    date: $('#race-date').value,
+    distance_m: Number($('#race-distance').value),
+    goal_time: $('#race-goal').value,
+    priority: $('#race-priority').value,
+  });
+  $('#race-name').value = '';
+  loadPlanTab();
+});
+
+$('#plan-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const raceId = $('#plan-race').value;
+  if (!raceId) return;
+  const btn = event.submitter;
+  if (btn) btn.disabled = true;
+  try {
+    await post('/api/plan/generate', {
+      race_id: raceId,
+      notes: $('#plan-notes').value,
+      extras: ['strength'],
+      adjust: Boolean($('#plan-notes').value),
+    });
+    await loadPlanTab();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
+$('#btn-activate').addEventListener('click', async () => {
+  if (!state.plan) return;
+  await post(`/api/plan/${state.plan.id}/activate`);
+  await loadPlanTab();
+  alert('Queued. The next extension sync writes these workouts to Garmin.');
+});
+
+function emptyStep() {
+  return { kind: 'step', intensity: 'active', duration: { type: 'time', value: 10, unit: 'min' }, target: { type: 'hr_zone', zone: 2 } };
+}
+
+function renderBuilder() {
+  const host = $('#wo-steps');
+  if (!state.draftSteps) state.draftSteps = [emptyStep()];
+  host.innerHTML = state.draftSteps.map((step, i) => stepEditor(step, i)).join('');
+  $$('#wo-steps [data-remove]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.draftSteps.splice(Number(btn.dataset.remove), 1);
+      renderBuilder();
+    });
+  });
+}
+
+function stepEditor(step, i) {
+  if (step.kind === 'repeat') {
+    return `<div class="repeat-box">
+      Repeat <input type="number" min="1" max="20" value="${step.times || 4}" data-rep="${i}"> times
+      ${(step.steps || []).map((s, j) => stepEditor(s, `${i}.${j}`)).join('')}
+    </div>`;
+  }
+  const d = step.duration || {};
+  const t = step.target || {};
+  return `<div class="step-row">
+    <select data-f="intensity" data-i="${i}">
+      ${['warmup','active','interval','recovery','cooldown','rest'].map((v) =>
+        `<option${step.intensity === v ? ' selected' : ''}>${v}</option>`).join('')}
+    </select>
+    <input type="number" min="1" value="${d.value || 10}" data-f="durval" data-i="${i}">
+    <select data-f="durtype" data-i="${i}">
+      <option value="time"${d.type === 'time' ? ' selected' : ''}>min</option>
+      <option value="distance"${d.type === 'distance' ? ' selected' : ''}>m</option>
+      <option value="reps"${d.type === 'reps' ? ' selected' : ''}>reps</option>
+    </select>
+    <select data-f="targ" data-i="${i}">
+      <option value="hr_zone"${t.type === 'hr_zone' ? ' selected' : ''}>HR zone</option>
+      <option value="pace"${t.type === 'pace' ? ' selected' : ''}>Pace</option>
+      <option value="power_zone"${t.type === 'power_zone' ? ' selected' : ''}>Power zone</option>
+      <option value="none"${t.type === 'none' ? ' selected' : ''}>None</option>
+    </select>
+    <input placeholder="zone / 4:30" value="${t.zone || t.low || ''}" data-f="targval" data-i="${i}">
+    <input placeholder="exercise" value="${step.exercise || ''}" data-f="ex" data-i="${i}">
+    <button type="button" class="ghost" data-remove="${i}">×</button>
+  </div>`;
+}
+
+function readBuilder() {
+  if (state.draftWorkout && Array.isArray(state.draftWorkout.steps)
+      && state.draftWorkout.steps.some((s) => s.kind === 'repeat')) {
+    return {
+      name: $('#wo-name').value || state.draftWorkout.name || 'Workout',
+      sport: $('#wo-sport').value,
+      kind: $('#wo-kind').value,
+      steps: state.draftWorkout.steps,
+    };
+  }
+  const steps = [];
+  $$('#wo-steps .step-row').forEach((row) => {
+    const get = (f) => row.querySelector(`[data-f="${f}"]`);
+    if (!get('intensity')) return;
+    const durType = get('durtype').value;
+    const targetType = get('targ').value;
+    const targVal = get('targval').value;
+    const step = {
+      kind: 'step',
+      intensity: get('intensity').value,
+      duration: { type: durType, value: Number(get('durval').value) || 10,
+                  unit: durType === 'time' ? 'min' : (durType === 'distance' ? 'm' : '') },
+      target: targetType === 'pace'
+        ? { type: 'pace', low: targVal, high: targVal }
+        : targetType === 'none' ? { type: 'none' }
+        : { type: targetType, zone: Number(targVal) || 2 },
+    };
+    const ex = get('ex') && get('ex').value.trim();
+    if (ex) step.exercise = ex;
+    steps.push(step);
+  });
+  return {
+    name: $('#wo-name').value || 'Workout',
+    sport: $('#wo-sport').value,
+    kind: $('#wo-kind').value,
+    steps,
+  };
+}
+
+$('#wo-add-step').addEventListener('click', () => {
+  if (!state.draftSteps) state.draftSteps = [];
+  state.draftSteps.push(emptyStep());
+  renderBuilder();
+});
+
+$('#wo-add-repeat').addEventListener('click', () => {
+  if (!state.draftSteps) state.draftSteps = [];
+  state.draftSteps.push({
+    kind: 'repeat', times: 4,
+    steps: [
+      { kind: 'step', intensity: 'interval', duration: { type: 'distance', value: 400, unit: 'm' }, target: { type: 'hr_zone', zone: 5 } },
+      { kind: 'step', intensity: 'recovery', duration: { type: 'time', value: 90, unit: 's' } },
+    ],
+  });
+  renderBuilder();
+});
+
+async function loadWorkouts() {
+  if (!state.draftSteps) renderBuilder();
+  if (!$('#wo-date').value) $('#wo-date').value = new Date().toISOString().slice(0, 10);
+  const body = await api('/api/workouts');
+  const rows = (body.workouts || []).map((w) => {
+    const wo = w.workout || w;
+    return `<tr>
+      <td>${escapeHtml(w.name || wo.name || '')}</td>
+      <td>${escapeHtml(wo.sport || '')}</td>
+      <td>${escapeHtml(wo.kind || '')}</td>
+      <td>${wo.est_load || ''}</td>
+      <td><button type="button" class="ghost" data-use="${escapeHtml(w.key || w.id || '')}">Use</button></td>
+    </tr>`;
+  }).join('');
+  $('#wo-library').innerHTML = '<thead><tr><th>Name</th><th>Sport</th><th>Kind</th><th>Load</th><th></th></tr></thead>'
+    + `<tbody>${rows}</tbody>`;
+  state.library = body.workouts || [];
+  $$('#wo-library [data-use]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const item = (state.library || []).find((w) => (w.key || w.id) === btn.dataset.use);
+      const wo = (item && (item.workout || item)) || null;
+      if (!wo) return;
+      $('#wo-name').value = wo.name || '';
+      $('#wo-sport').value = wo.sport || 'running';
+      $('#wo-kind').value = wo.kind || 'easy';
+      state.draftSteps = wo.steps || [emptyStep()];
+      state.draftWorkout = wo;
+      renderBuilder();
+    });
+  });
+}
+
+$('#wo-preview').addEventListener('click', async () => {
+  try {
+    const body = await post('/api/workout/preview', readBuilder());
+    $('#wo-preview-out').textContent =
+      (body.description ? body.description + '\n\n' : '') +
+      JSON.stringify(body.workout, null, 2);
+  } catch (error) {
+    $('#wo-preview-out').textContent = error.message;
+  }
+});
+
+$('#wo-schedule').addEventListener('click', async () => {
+  try {
+    const body = await post('/api/workout/schedule', {
+      ...readBuilder(),
+      date: $('#wo-date').value,
+    });
+    $('#wo-preview-out').textContent = 'Queued for the next sync: ' + (body.session && body.session.date);
+  } catch (error) {
+    $('#wo-preview-out').textContent = error.message;
+  }
+});
+
+$('#wo-save').addEventListener('click', async () => {
+  try {
+    await post('/api/workouts', readBuilder());
+    loadWorkouts();
+  } catch (error) {
+    $('#wo-preview-out').textContent = error.message;
+  }
+});
+
+async function loadPerformance() {
+  const p = await api('/api/performance');
+  state.performance = p;
+  const dist = p.distribution || {};
+  const fos = p.foster || {};
+  $('#perf-headline').innerHTML = [
+    tile('VDOT', fmt(p.vdot, 1), p.vdot_from && p.vdot_from.mark ? `from ${p.vdot_from.mark}` : ''),
+    tile('Critical speed', (p.critical_speed && p.critical_speed.pace) || '--', 'threshold-ish'),
+    tile('Easy / hard',
+      dist.easy_pct != null ? `${fmt(dist.easy_pct, 0)}/${fmt(dist.hard_pct, 0)}` : '--',
+      'last 6 weeks, HR zones'),
+    tile('Monotony', fmt(fos.monotony, 2), fos.strain != null ? `strain ${fmt(fos.strain)}` : 'Foster 7d'),
+  ].join('');
+  const recRows = (p.records || []).map((r) =>
+    `<tr><td>${r.mark}</td><td>${r.time}</td><td>${r.pace}</td><td>${r.date || ''}</td></tr>`).join('');
+  $('#perf-records').innerHTML = '<thead><tr><th>Mark</th><th>Time</th><th>Pace</th><th>Date</th></tr></thead>'
+    + `<tbody>${recRows || '<tr><td colspan="4">Need a few quality runs.</td></tr>'}</tbody>`;
+  const predRows = (p.predictions || []).map((r) =>
+    `<tr><td>${r.mark}</td><td>${r.vdot_time || '--'}</td><td>${r.riegel_time || '--'}</td><td>${r.garmin || '--'}</td></tr>`).join('');
+  $('#perf-pred').innerHTML = '<thead><tr><th>Mark</th><th>VDOT</th><th>Riegel</th><th>Garmin</th></tr></thead>'
+    + `<tbody>${predRows}</tbody>`;
+  const order = ['easy', 'recovery', 'marathon', 'threshold', 'interval', 'rep', 'goal'];
+  const labels = {
+    easy: 'Easy (E)', recovery: 'Recovery', marathon: 'Marathon (M)',
+    threshold: 'Threshold (T)', interval: 'Interval (I)', rep: 'Repetition (R)',
+    goal: 'Goal race pace',
+  };
+  const bands = (p.paces && p.paces.bands) || {};
+  const paceRows = order.map((key) => {
+    const b = bands[key] || {};
+    const mid = b.mid || (p.paces && p.paces[key]);
+    if (!mid) return '';
+    const rng = b.high && b.low && b.high !== b.low ? `${b.high}–${b.low}/km` : '';
+    return `<div><span>${labels[key]}</span><span>${rng || mid + '/km'}</span></div>`;
+  }).join('');
+  $('#perf-paces').innerHTML = paceRows
+    || '<div><span>Paces</span><span>Need a 5k-ish effort first</span></div>';
+  const decRows = (p.efficiency || []).filter((e) => e.decoupling != null).slice(-12)
+    .map((e) => `<tr><td>${e.date}</td><td>${e.pace}</td><td>${e.hr}</td><td>${e.decoupling}%</td></tr>`).join('');
+  const decTable = $('#perf-decouple');
+  if (decTable) {
+    decTable.innerHTML = '<thead><tr><th>Date</th><th>Pace</th><th>HR</th><th>Decoupling</th></tr></thead>'
+      + `<tbody>${decRows || '<tr><td colspan="4">Need long runs with splits.</td></tr>'}</tbody>`;
+  }
+  drawPaceCurve(p.curve || []);
+  drawEfficiency(p.efficiency || []);
+}
+
+function drawPaceCurve(curve) {
+  const canvas = $('#chart-curve');
+  if (!canvas || !window.Chart) return;
+  if (state.charts.curve) state.charts.curve.destroy();
+  const paceS = curve.map((r) => {
+    if (!r.pace) return null;
+    const p = String(r.pace).split(':');
+    return Number(p[0]) * 60 + Number(p[1] || 0);
+  });
+  state.charts.curve = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: curve.map((r) => r.mark),
+      datasets: [{
+        label: 'sec/km',
+        data: paceS,
+        borderColor: COLORS.atl,
+        tension: .25,
+        pointRadius: 4,
+      }],
+    },
+    options: baseOptions({
+      scales: {
+        y: { reverse: true, title: { display: true, text: 'pace (faster up)', color: css('--muted') } },
+      },
+    }),
+  });
+}
+
+function drawEfficiency(points) {
+  const canvas = $('#chart-efficiency');
+  if (!canvas || !window.Chart) return;
+  if (state.charts.efficiency) state.charts.efficiency.destroy();
+  state.charts.efficiency = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: points.map((p) => shortDate(p.date)),
+      datasets: [
+        { label: 'HR', data: points.map((p) => p.hr), borderColor: COLORS.rhr, tension: .3, pointRadius: 0 },
+        { label: 'HR / pace', data: points.map((p) => p.hr_per_pace), borderColor: COLORS.hrv, tension: .3, pointRadius: 0, yAxisID: 'y1' },
+      ],
+    },
+    options: baseOptions({
+      scales: {
+        y1: { position: 'right', grid: { display: false } },
+      },
+    }),
+  });
+}
+
+const WEEKDAYS = [
+  ['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'],
+  ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun'],
+];
+
+async function loadAthlete() {
+  const profile = await api('/api/athlete');
+  state.athlete = profile || {};
+  const avail = state.athlete.availability || {};
+  const defaults = { mon: 0, tue: 60, wed: 60, thu: 60, fri: 60, sat: 90, sun: 90 };
+  const host = $('#ath-days');
+  if (host) {
+    host.innerHTML = WEEKDAYS.map(([key, label]) => {
+      const mins = (avail[key] && avail[key].minutes != null)
+        ? avail[key].minutes : defaults[key];
+      return `<label class="muted">${label}<input type="number" min="0" max="240" data-day="${key}" value="${mins}"></label>`;
+    }).join('');
+  }
+  if ($('#ath-hr-max')) $('#ath-hr-max').value = state.athlete.hr_max || '';
+  if ($('#ath-hr-rest')) $('#ath-hr-rest').value = state.athlete.hr_rest || '';
+  if ($('#ath-weight')) $('#ath-weight').value = state.athlete.weight_kg || '';
+}
+
+const athleteForm = $('#athlete-form');
+if (athleteForm) {
+  athleteForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const availability = {};
+    $$('#ath-days [data-day]').forEach((input) => {
+      availability[input.dataset.day] = {
+        minutes: Number(input.value) || 0,
+        sports: ['running'],
+      };
+    });
+    await api('/api/athlete', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        availability,
+        hr_max: Number($('#ath-hr-max').value) || null,
+        hr_rest: Number($('#ath-hr-rest').value) || null,
+        weight_kg: Number($('#ath-weight').value) || null,
+      }),
+    });
+    const note = $('#ath-saved');
+    if (note) note.textContent = 'Saved. New plans will use this.';
+  });
+}
+
 // ---- boot -------------------------------------------------------------------
+function updateHistoryBanner(status) {
+  const el = $('#history-banner');
+  if (!el) return;
+  if (!status || !status.first) {
+    el.classList.add('hidden');
+    return;
+  }
+  const first = new Date(`${status.first}T00:00:00`);
+  const ageDays = Math.round((Date.now() - first.getTime()) / 86400000);
+  if (ageDays >= 500) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+  el.innerHTML =
+    `<strong>History from ${status.first}</strong>` +
+    `<span>Open the extension → <em>Load all history</em>. Keep Garmin Connect ` +
+    `signed in. This page fills in as older days arrive.</span>`;
+}
+
+let historyWatch = null;
+function watchIncomingHistory() {
+  if (historyWatch) return;
+  const started = Date.now();
+  let last = `${state.status.days}-${state.status.activities}-${state.status.first}`;
+  historyWatch = setInterval(async () => {
+    if (Date.now() - started > 20 * 60 * 1000) {
+      clearInterval(historyWatch);
+      historyWatch = null;
+      return;
+    }
+    try {
+      const status = await api('/api/status');
+      const sig = `${status.days}-${status.activities}-${status.first}`;
+      if (sig === last) return;
+      last = sig;
+      state.status = status;
+      $('#freshness').textContent = status.last ? `updated ${status.ago}` : 'no data yet';
+      renderAccount(status);
+      updateHistoryBanner(status);
+      if (!$('#dashboard-body').classList.contains('hidden')) {
+        loadDashboard().catch(() => {});
+      }
+    } catch {
+      // 401 already shows the gate.
+    }
+  }, 4000);
+}
+
+let emptyPoll = null;
+function stopEmptyPoll() {
+  if (!emptyPoll) return;
+  clearInterval(emptyPoll);
+  emptyPoll = null;
+}
+
+function startEmptyPoll() {
+  if (emptyPoll) return;
+  emptyPoll = setInterval(async () => {
+    try {
+      const status = await api('/api/status');
+      state.status = status;
+      $('#freshness').textContent = status.last
+        ? `updated ${status.ago}`
+        : 'waiting for Garmin data…';
+      if (status.days || status.activities) {
+        stopEmptyPoll();
+        boot();
+      }
+    } catch {
+      // 401 already shows the sign-in gate.
+    }
+  }, 2500);
+}
+
 async function boot() {
   state.site = await fetch('/api/config').then((r) => r.json()).catch(() => ({}));
   setMode(state.mode);
@@ -625,24 +1458,41 @@ async function boot() {
   $('#app').classList.remove('hidden');
   $('#freshness').textContent = status.last ? `updated ${status.ago}` : 'no data yet';
   const repo = status.repo || state.site.repo || '#';
-  $('#repo-link').href = repo;
   const repoAccount = $('#repo-link-account');
   if (repoAccount) repoAccount.href = repo;
-  $('#onboard-command').textContent = linkCommand();
+  const origin = $('#onboard-origin');
+  if (origin) origin.textContent = siteOrigin();
   renderAccount(status);
+  updateHistoryBanner(status);
+  loadAthlete().catch(() => {});
+
+  if (window.Chart) {
+    Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+    Chart.defaults.color = css('--muted');
+  }
 
   // Nothing pushed yet: the charts would be empty, so explain what to do.
-  const empty = !status.days;
+  const empty = !status.days && !status.activities;
   $('#onboarding').classList.toggle('hidden', !empty);
   $('#dashboard-body').classList.toggle('hidden', empty);
 
   $('#coach-off').classList.toggle('hidden', !!status.coach);
   $('#coach-body').classList.toggle('hidden', !status.coach);
 
-  if (empty) return;
+  if (empty) {
+    startEmptyPoll();
+    return;
+  }
+  stopEmptyPoll();
+  watchIncomingHistory();
   loadDashboard().catch((error) => {
     $('#headline').innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
   });
 }
+
+bindDropzone($('#onboard-drop'), $('#onboard-file'),
+             $('#onboard-import-status'), $('#onboard-browse'));
+bindDropzone($('#account-drop'), $('#account-file'),
+             $('#account-import-status'), $('#account-browse'));
 
 boot().catch(() => showGate('Could not reach the site.'));

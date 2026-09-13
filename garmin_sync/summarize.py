@@ -73,9 +73,51 @@ def summarize_activity(a: dict, full: bool = False) -> dict:
         "aerobic_te": a.get("aerobicTrainingEffect"),
         "anaerobic_te": a.get("anaerobicTrainingEffect"),
         "training_load": a.get("activityTrainingLoad"),
-        "avg_power": a.get("avgPower"),
-        "avg_cadence": a.get("averageRunningCadenceInStepsPerMinute") or a.get("averageBikingCadenceInRevPerMinute"),
+        "avg_power": a.get("avgPower") or a.get("normPower"),
+        "norm_power": a.get("normPower"),
+        "avg_cadence": a.get("averageRunningCadenceInStepsPerMinute")
+        or a.get("averageBikingCadenceInRevPerMinute")
+        or a.get("averageSwimCadenceInStrokesPerMinute"),
+        "vo2max": a.get("vO2MaxValue"),
+        "avg_stride_cm": _round(a.get("avgStrideLength")),
+        "max_speed": _round(a.get("maxSpeed")),
+        "elevation_loss_m": _round(a.get("elevationLoss")),
+        "min_hr": a.get("minHR"),
+        "hr_zones": _hr_zones(a),
+        "splits": _compact_splits(a),
     }
+
+
+def _hr_zones(a: dict) -> list[dict] | None:
+    """Keep time-in-zone if Garmin attached it to the activity list item."""
+    raw = a.get("hrTimeInZone") or a.get("heartRateZones") or a.get("hrZones")
+    if not isinstance(raw, list) or not raw:
+        return None
+    out = []
+    for i, z in enumerate(raw, 1):
+        if isinstance(z, dict):
+            secs = z.get("secs") or z.get("timeInZone") or z.get("duration")
+            out.append({"zone": z.get("zoneNumber") or i, "secs": secs})
+        elif isinstance(z, (int, float)):
+            out.append({"zone": i, "secs": z})
+    return out or None
+
+
+def _compact_splits(a: dict) -> list[dict] | None:
+    splits = a.get("splits") or _g(a, "splitSummaries") or []
+    if not isinstance(splits, list) or not splits:
+        return None
+    out = []
+    for s in splits[:80]:
+        if not isinstance(s, dict):
+            continue
+        out.append({
+            "distance_m": _round(s.get("distance") or s.get("distanceInMeters")),
+            "duration_s": _round(s.get("duration") or s.get("elapsedDuration")),
+            "avg_hr": s.get("averageHR") or s.get("avgHR"),
+            "elevation_gain_m": _round(s.get("elevationGain")),
+        })
+    return out or None
 
 
 def summarize_sleep(s: dict) -> dict | None:

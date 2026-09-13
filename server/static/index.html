@@ -3,18 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#2f6df6">
-<title>Garmin Sync</title>
-<link rel="stylesheet" href="/static/styles.css">
+<meta name="theme-color" content="#111111">
+<title>garmincoach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css?v=9">
 </head>
 <body>
 
 <!-- Shown until a session cookie checks out. -->
-<div id="gate" class="gate hidden">
-  <form class="card gate-card" id="gate-form">
-    <h1>Garmin Sync</h1>
-    <p class="muted" id="gate-blurb">Charts and a coach for your training.
-      After signup you’ll connect your computer once so Garmin data can arrive here.</p>
+<div id="gate" class="gate">
+  <form class="gate-card" id="gate-form">
+    <div class="brand">garmin<span>coach</span></div>
+    <p class="muted" id="gate-blurb">Training load, recovery and a coach.
+      A browser extension brings your Garmin data here.</p>
 
     <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required>
     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
@@ -30,15 +33,18 @@
 
 <div id="app" class="hidden">
   <header>
-    <div class="bar">
-      <h1>Garmin Sync</h1>
+    <div class="top">
+      <div class="brand">garmin<span>coach</span></div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="dashboard">Dashboard</button>
+        <button class="tab" data-tab="plan">Plan</button>
+        <button class="tab" data-tab="workouts">Workouts</button>
+        <button class="tab" data-tab="performance">Performance</button>
+        <button class="tab" data-tab="coach">Coach</button>
+        <button class="tab" data-tab="account">Account</button>
+      </nav>
       <span class="muted" id="freshness"></span>
     </div>
-    <nav class="tabs">
-      <button class="tab active" data-tab="dashboard">Dashboard</button>
-      <button class="tab" data-tab="coach">Coach</button>
-      <button class="tab" data-tab="account">Account</button>
-    </nav>
   </header>
 
   <main>
@@ -47,19 +53,20 @@
       <div class="card setup-card hidden" id="onboarding">
         <p class="setup-kicker">First setup</p>
         <h2>Bring your Garmin data here</h2>
-        <p class="lede">This site shows charts and talks to a coach. It cannot
-          log into Garmin for you — that has to happen once on <em>your</em>
-          computer. After that, updates take one command.</p>
+        <p class="lede">Install a small browser extension. It uses the Garmin
+          session you already have — no Python, no terminal, no extra login.
+          After that it updates on its own.</p>
 
         <ol class="setup">
           <li>
             <div class="setup-head">
               <span class="setup-num">1</span>
               <div>
-                <strong>Get the sync app on your computer</strong>
-                <p class="muted">Mac or Windows with Python 3.11+. Download the
-                  project, then open a terminal in that folder.</p>
-                <a class="btn-link" id="repo-link" href="#" target="_blank" rel="noreferrer">Download the sync tool →</a>
+                <strong>Add the extension to Chrome</strong>
+                <p class="muted">Download the zip, unzip it, then in Chrome open
+                  <code>chrome://extensions</code>, turn on <em>Developer mode</em>,
+                  and click <em>Load unpacked</em>. Choose the unzipped folder.</p>
+                <a class="btn-link" id="ext-download" href="/extension.zip">Download the extension →</a>
               </div>
             </div>
           </li>
@@ -67,13 +74,13 @@
             <div class="setup-head">
               <span class="setup-num">2</span>
               <div>
-                <strong>Install it (once)</strong>
-                <p class="muted">Paste this into the terminal and wait until it finishes.</p>
+                <strong>Connect it to this site</strong>
+                <p class="muted">Open Garmin Connect in a tab and sign in if
+                  asked. Click the extension icon, paste this address, then
+                  approve the connection in the tab that opens.</p>
                 <div class="cmd">
-                  <pre id="cmd-install">python3 -m venv .venv &amp;&amp; source .venv/bin/activate
-pip install -r requirements-local.txt
-playwright install chromium</pre>
-                  <button type="button" class="ghost copy-cmd" data-copy="cmd-install">Copy</button>
+                  <pre id="onboard-origin">…</pre>
+                  <button type="button" class="ghost copy-cmd" data-copy="onboard-origin">Copy</button>
                 </div>
               </div>
             </div>
@@ -82,47 +89,28 @@ playwright install chromium</pre>
             <div class="setup-head">
               <span class="setup-num">3</span>
               <div>
-                <strong>Sign in to Garmin (once)</strong>
-                <p class="muted">A Chromium window opens. Log in with your Garmin
-                  account, including the MFA code if asked. Close the window when it says you’re done.</p>
-                <div class="cmd">
-                  <pre id="cmd-login">python -m garmin_sync login</pre>
-                  <button type="button" class="ghost copy-cmd" data-copy="cmd-login">Copy</button>
-                </div>
-              </div>
-            </div>
-          </li>
-          <li>
-            <div class="setup-head">
-              <span class="setup-num">4</span>
-              <div>
-                <strong>Connect this site</strong>
-                <p class="muted">This opens a browser tab back here. Sign in if
-                  asked, then click <em>Connect this computer</em>. No token to copy.</p>
-                <div class="cmd">
-                  <pre id="onboard-command">…</pre>
-                  <button type="button" class="ghost copy-cmd" data-copy="onboard-command">Copy</button>
-                </div>
-              </div>
-            </div>
-          </li>
-          <li>
-            <div class="setup-head">
-              <span class="setup-num">5</span>
-              <div>
-                <strong>Publish your history</strong>
-                <p class="muted">Fetches what’s missing from Garmin and sends it here. Use this whenever you want fresh data.</p>
-                <div class="cmd">
-                  <pre id="cmd-sync">python -m garmin_sync sync</pre>
-                  <button type="button" class="ghost copy-cmd" data-copy="cmd-sync">Copy</button>
-                </div>
+                <strong>Wait for the first days to land</strong>
+                <p class="muted">Keep Garmin Connect open and signed in. The
+                  last month arrives in about a minute, and this page fills
+                  in by itself. After that the extension refreshes every few
+                  hours — or click <em>Sync now</em> on the extension icon.</p>
               </div>
             </div>
           </li>
         </ol>
 
-        <p class="setup-foot muted">When this page shows charts, you’re done.
-          Come back anytime — or refresh after a sync.</p>
+        <div class="or-rule"><span>or load years of history at once</span></div>
+        <div class="dropzone" id="onboard-drop" tabindex="0">
+          <strong>Drop Garmin’s official export here</strong>
+          <p class="muted">On Garmin: Account → Data Management → Export Your Data.
+            When the zip arrives, drop it on this box. Nothing to install.</p>
+          <input type="file" id="onboard-file" accept=".zip,application/zip" hidden>
+          <button type="button" class="ghost" id="onboard-browse">Choose a zip</button>
+          <p class="muted" id="onboard-import-status"></p>
+        </div>
+
+        <p class="setup-foot muted" id="onboard-wait">Waiting for Garmin data… keep this tab open.</p>
+        <p class="setup-foot muted">When this page shows charts, you’re done.</p>
       </div>
 
       <div id="dashboard-body">
@@ -132,8 +120,35 @@ playwright install chromium</pre>
           <button class="chip" data-range="365">1 year</button>
           <button class="chip" data-range="all">All</button>
         </div>
+        <div class="history-banner hidden" id="history-banner"></div>
 
         <div class="cards" id="headline"></div>
+        <div class="explain-grid">
+          <article>
+            <h3>Form (TSB)</h3>
+            <p>CTL minus ATL. Positive means you're fresh; negative means
+              fatigue is ahead of fitness. A dip to −10/−20 in a build is
+              normal. If it stays under −20 and HRV is also down, ease off.</p>
+          </article>
+          <article>
+            <h3>CTL / ATL / load ratio</h3>
+            <p>CTL is ~42-day fitness, ATL ~7-day fatigue. The load ratio is
+              ATL/CTL (ACWR). About 0.8–1.3 is productive. Above 1.5 is where
+              niggles cluster. We cap planned weeks at 1.25.</p>
+          </article>
+          <article>
+            <h3>HRV and resting HR</h3>
+            <p>Only the gap to <em>your</em> baseline matters. HRV down and
+              resting HR up for two or three mornings is the real signal.
+              One odd night is noise.</p>
+          </article>
+          <article>
+            <h3>Sleep score</h3>
+            <p>Garmin's 0–100 blend of duration and stages. Use it with HRV,
+              not instead of it. A short night before a quality day is a
+              reason to swap, not to hero through intervals.</p>
+          </article>
+        </div>
 
         <div class="card">
           <h2>Load and form</h2>
@@ -152,11 +167,17 @@ playwright install chromium</pre>
 
         <div class="card">
           <h2>Sleep</h2>
+          <p class="muted">Stacked bars are hours in deep, light and REM.
+            The line is Garmin’s sleep score. Consecutive low scores with
+            rising resting HR are a better rest cue than one short night.</p>
           <div class="chart"><canvas id="chart-sleep"></canvas></div>
         </div>
 
         <div class="card">
           <h2>Weekly volume</h2>
+          <p class="muted">Hours by sport, plus weekly load. Ramp more than
+            about 8% week to week and the next block gets harder than it
+            looks on paper.</p>
           <div class="chart"><canvas id="chart-weeks"></canvas></div>
         </div>
 
@@ -171,6 +192,159 @@ playwright install chromium</pre>
           <h2>Recent activities</h2>
           <div class="scroll"><table id="activities"></table></div>
         </div>
+      </div>
+    </section>
+
+    <section id="tab-plan" class="panel hidden">
+      <div class="card" id="decide-card">
+        <div class="bar">
+          <h2>Today</h2>
+          <div class="row-actions" id="decide-actions"></div>
+        </div>
+        <p class="muted" id="decide-text">No session planned for today.</p>
+      </div>
+      <div class="card">
+        <div class="bar">
+          <h2>Races</h2>
+        </div>
+        <form class="composer wrap" id="race-form">
+          <input id="race-name" placeholder="Race name" required>
+          <input id="race-date" type="date" required>
+          <select id="race-distance">
+            <option value="5000">5k</option>
+            <option value="10000">10k</option>
+            <option value="21097" selected>Half</option>
+            <option value="42195">Marathon</option>
+          </select>
+          <input id="race-goal" placeholder="Goal 1:45:00">
+          <select id="race-priority">
+            <option value="A" selected>A-race</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+          </select>
+          <button class="primary" type="submit">Add race</button>
+        </form>
+        <div class="scroll"><table id="race-table"></table></div>
+        <div id="race-review" class="muted"></div>
+      </div>
+      <div class="card">
+        <div class="bar">
+          <h2>Training plan</h2>
+          <button class="ghost" id="btn-activate" type="button">Send to watch</button>
+        </div>
+        <form class="composer wrap" id="plan-form">
+          <select id="plan-race"></select>
+          <input id="plan-notes" placeholder="Constraints: Tue off, max 5 days…">
+          <button class="primary" type="submit">Generate plan</button>
+        </form>
+        <p class="muted" id="plan-rationale"></p>
+        <div class="cards" id="plan-headline"></div>
+        <div class="pace-board" id="pace-board"></div>
+        <p class="muted" id="pace-source"></p>
+        <div class="chart"><canvas id="chart-projected"></canvas></div>
+        <p class="muted" id="plan-adherence"></p>
+        <div id="plan-weeks"></div>
+        <div class="session-sheet hidden" id="session-sheet"></div>
+      </div>
+    </section>
+
+    <section id="tab-workouts" class="panel hidden">
+      <div class="card">
+        <h2>Build a workout</h2>
+        <p class="muted">Structured session in our format. Preview checks it;
+          Schedule queues it for the next extension sync, which writes it to
+          Garmin and your watch.</p>
+        <div class="builder">
+          <input id="wo-name" placeholder="Name">
+          <select id="wo-sport">
+            <option value="running">Run</option>
+            <option value="cycling">Bike</option>
+            <option value="swimming">Swim</option>
+            <option value="strength">Strength</option>
+          </select>
+          <select id="wo-kind">
+            <option value="easy">Easy</option>
+            <option value="long">Long</option>
+            <option value="tempo">Tempo</option>
+            <option value="interval">Interval</option>
+            <option value="strength">Strength</option>
+            <option value="bike">Bike</option>
+            <option value="swim">Swim</option>
+          </select>
+        </div>
+        <div id="wo-steps"></div>
+        <button class="ghost" type="button" id="wo-add-step">Add step</button>
+        <button class="ghost" type="button" id="wo-add-repeat">Add repeat</button>
+        <div class="composer wrap">
+          <input id="wo-date" type="date">
+          <button class="primary" type="button" id="wo-preview">Preview</button>
+          <button class="primary" type="button" id="wo-schedule">Schedule</button>
+          <button class="ghost" type="button" id="wo-save">Save to library</button>
+        </div>
+        <pre class="cmd-out" id="wo-preview-out"></pre>
+      </div>
+      <div class="card">
+        <h2>Library</h2>
+        <div class="scroll"><table id="wo-library"></table></div>
+      </div>
+    </section>
+
+    <section id="tab-performance" class="panel hidden">
+      <div class="cards" id="perf-headline"></div>
+      <div class="explain-grid">
+        <article>
+          <h3>VDOT</h3>
+          <p>Jack Daniels’ index of current race fitness, from your best
+            recent 5k–half. Training paces (E/M/T/I/R) are percentages of
+            this number, not of the time you wish you could run.</p>
+        </article>
+        <article>
+          <h3>80/20</h3>
+          <p>Share of running time in HR zones 1–2 vs 3–5 over six weeks.
+            Polarised training sits near 80% easy. If hard is winning, the
+            easy days are not easy enough.</p>
+        </article>
+        <article>
+          <h3>Foster monotony</h3>
+          <p>Mean daily load divided by its standard deviation over 7 days.
+            Above ~2 the week is too samey — strain (monotony × total load)
+            climbs even if no single day looks huge.</p>
+        </article>
+        <article>
+          <h3>Decoupling</h3>
+          <p>How much second-half pace fades vs the first at similar HR.
+            Aerobic decoupling over ~5% on a long run means the duration
+            outran your current endurance.</p>
+        </article>
+      </div>
+      <div class="card">
+        <h2>Personal records</h2>
+        <div class="scroll"><table id="perf-records"></table></div>
+      </div>
+      <div class="card">
+        <h2>Pace curve</h2>
+        <p class="muted">Best pace at each standard mark.</p>
+        <div class="chart"><canvas id="chart-curve"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Race predictions</h2>
+        <p class="muted">VDOT / Daniels, Riegel from your nearest PR, and
+          Garmin’s own prediction when we have it.</p>
+        <div class="scroll"><table id="perf-pred"></table></div>
+      </div>
+      <div class="card">
+        <h2>Training paces</h2>
+        <p class="muted">Daniels zones in min/km. Easy is a range (59–74%
+          VO2). T, I and R are narrow bands around the table values. The
+          planner stamps these onto every structured workout.</p>
+        <div class="rows" id="perf-paces"></div>
+      </div>
+      <div class="card">
+        <h2>Aerobic efficiency</h2>
+        <p class="muted">Heart rate at easy pace over time. Down and to the
+          right is getting fitter, not just running more.</p>
+        <div class="chart"><canvas id="chart-efficiency"></canvas></div>
+        <div class="scroll"><table id="perf-decouple"></table></div>
       </div>
     </section>
 
@@ -209,57 +383,56 @@ playwright install chromium</pre>
         <div class="rows" id="account-rows"></div>
       </div>
 
-      <div class="card setup-card">
-        <p class="setup-kicker">Computer link</p>
-        <h2>How to connect your computer</h2>
-        <p class="lede">Garmin login only works on your own machine. Link it to
-          this account once; afterwards <code>python -m garmin_sync sync</code>
-          keeps the dashboard up to date.</p>
+      <div class="card">
+        <h2>Athlete</h2>
+        <p class="muted">The planner uses this: days you can train, and HR if
+          you know it. Leave a day at 0 minutes to keep it off.</p>
+        <form id="athlete-form">
+          <div class="builder" id="ath-days"></div>
+          <div class="composer wrap">
+            <input id="ath-hr-max" type="number" min="120" max="220" placeholder="HR max">
+            <input id="ath-hr-rest" type="number" min="30" max="100" placeholder="Resting HR">
+            <input id="ath-weight" type="number" min="30" max="200" step="0.1" placeholder="Weight kg">
+            <button class="primary" type="submit">Save athlete</button>
+          </div>
+          <p class="muted" id="ath-saved"></p>
+        </form>
+      </div>
 
-        <ol class="setup compact">
-          <li>
-            <div class="setup-head">
-              <span class="setup-num">1</span>
-              <div>
-                <strong>Install the sync tool</strong>
-                <p class="muted">If you haven’t yet, follow the steps on the
-                  Dashboard (empty state) or
-                  <a id="repo-link-account" href="#" target="_blank" rel="noreferrer">download the project</a>.</p>
-              </div>
-            </div>
-          </li>
-          <li>
-            <div class="setup-head">
-              <span class="setup-num">2</span>
-              <div>
-                <strong>Run this on that computer</strong>
-                <p class="muted">A browser opens this site. Approve the connection.
-                  Your sync token is saved automatically — you never need to paste it.</p>
-                <div class="cmd">
-                  <pre id="account-command">…</pre>
-                  <button type="button" class="ghost copy-cmd" data-copy="account-command">Copy</button>
-                </div>
-              </div>
-            </div>
-          </li>
-          <li>
-            <div class="setup-head">
-              <span class="setup-num">3</span>
-              <div>
-                <strong>Then sync whenever you want fresh data</strong>
-                <div class="cmd">
-                  <pre id="account-sync">python -m garmin_sync sync</pre>
-                  <button type="button" class="ghost copy-cmd" data-copy="account-sync">Copy</button>
-                </div>
-              </div>
-            </div>
-          </li>
-        </ol>
+      <div class="card setup-card">
+        <p class="setup-kicker">How data arrives</p>
+        <h2>Browser extension</h2>
+        <p class="lede">The usual way. It reads Garmin in the tab you’re
+          already signed into, and publishes here. No Python.</p>
+        <p class="muted">Site address to paste into the extension:</p>
+        <div class="cmd">
+          <pre id="account-origin">…</pre>
+          <button type="button" class="ghost copy-cmd" data-copy="account-origin">Copy</button>
+        </div>
+        <p><a class="btn-link" id="ext-download-account" href="/extension.zip">Download the extension →</a></p>
+
+        <h2 class="tight">Official Garmin export</h2>
+        <p class="muted">For years of history, or if you don’t want an
+          extension. Request an export from Garmin, then drop the zip here.</p>
+        <div class="dropzone" id="account-drop" tabindex="0">
+          <strong>Drop the export zip here</strong>
+          <p class="muted">Account → Data Management → Export Your Data on Garmin.</p>
+          <input type="file" id="account-file" accept=".zip,application/zip" hidden>
+          <button type="button" class="ghost" id="account-browse">Choose a zip</button>
+          <p class="muted" id="account-import-status"></p>
+        </div>
 
         <details class="advanced">
-          <summary>Advanced: raw sync token</summary>
-          <p class="muted">Only if you need to configure something by hand.
-            Anyone with this string can write into your history.</p>
+          <summary>Advanced: computer sync and raw token</summary>
+          <p class="muted">The original Python tool still works if you want
+            a headless machine to push data.
+            <a id="repo-link-account" href="#" target="_blank" rel="noreferrer">Get the project</a>,
+            then run this once:</p>
+          <div class="cmd">
+            <pre id="account-command">…</pre>
+            <button type="button" class="ghost copy-cmd" data-copy="account-command">Copy</button>
+          </div>
+          <p class="muted">Anyone with this string can write into your history.</p>
           <div class="token-row">
             <code id="token" class="token">…</code>
             <button class="ghost" id="btn-copy-token">Copy</button>
@@ -294,6 +467,6 @@ playwright install chromium</pre>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=9"></script>
 </body>
 </html>

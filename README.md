@@ -1,18 +1,24 @@
 # garmincoach
 
-Garmin data, pulled to your own computer through a real browser session,
-published to a site anyone can sign up for, and handed to Claude so you can ask
-it things.
+Garmin data, published to a site anyone can sign up for, and handed to a coach
+so you can ask it things.
 
-Two halves, and the split matters:
+The usual way in is a **browser extension**. It runs inside the Garmin Connect
+tab you are already signed into — no Python, no extra login, no MFA to repeat.
+For years of history, drop Garmin's official export zip on the site instead.
+
+The original computer sync is still there as a fallback. Two halves, and the
+split still matters:
 
 ```mermaid
 flowchart LR
-  Mac["Each user's computer: garmin_sync sync"] --> Garmin["Garmin, via a real Chromium session"]
-  Garmin --> LocalDB["data/garmin.db"]
-  LocalDB -->|"POST /api/ingest, bearer token"| Site["The site on Railway"]
+  Watch["Watch"] --> Garmin["Garmin Connect"]
+  Garmin <-->|"same browser session"| Ext["Browser extension"]
+  Ext -->|"POST /api/ingest"| Site["The site on Railway"]
+  Zip["Official Garmin export zip"] -->|"drag and drop"| Site
+  Mac["Fallback: garmin_sync on a computer"] -->|"POST /api/ingest"| Site
   Site --> Volume["site.db on a volume, one row set per account"]
-  Site --> Claude["Anthropic API"]
+  Site --> Claude["Coach API"]
   Phone["Any browser, anywhere"] --> Site
 ```
 
@@ -29,11 +35,12 @@ that id in its primary key, so one person's numbers cannot end up in another
 person's charts.
 
 What the site **cannot** do is fetch from Garmin on a user's behalf. Garmin's
-login needs a real browser, a human for the MFA code, and Cloudflare clearance
-tied to a home IP address (see below). So each user installs the sync tool on
-their own machine, signs in to Garmin there once, and links the computer to
-their site account in the browser. The site is the dashboard and the coach;
-the fetching stays local, for everybody.
+login needs a real browser and Cloudflare clearance tied to that browser.
+The extension solves this by running *inside* the Garmin tab you already
+use: same session, same cookies, no extra login. A one-off official export
+zip covers the past. The Python sync on your own computer remains as a
+fallback. The site is the dashboard and the coach; talking to Garmin always
+happens in a real browser.
 
 ## Why it works this way
 
@@ -230,6 +237,19 @@ Everything is computed on the fly from a few thousand tiny rows, so there's no
 cache to go stale. Ask for a year when you only have a month and the window
 quietly shrinks to the data you actually have.
 
+**Performance.** VDOT and critical speed from your best efforts, a pace
+curve, Daniels/Riegel race predictions (next to Garmin's when we have them),
+and training paces the planner uses.
+
+**Plan.** Add an A-race, generate a periodized block (base / build / peak /
+taper) with an 8% weekly-load cap and a projected form curve. Today's card
+can ease or rest the session if recovery is off. **Send to watch** queues
+the next two weeks; the extension writes them to Garmin on the following
+sync.
+
+**Workouts.** Build a structured session (run, bike, swim, strength),
+preview it, save it, or schedule it for a day. Same write path as the plan.
+
 ## The coach
 
 The Coach tab has two things: a briefing regenerated once a day and cached
@@ -315,6 +335,11 @@ garmin_sync/          each user's own computer
   endpoints.py        Garmin endpoint paths (baked in, stable)
   summarize.py        drop heavy streams, roll up daily wellness
   metrics.py          load/form, baselines, weekly rollups (shared with the site)
+  performance.py      VDOT, critical speed, predictions, records
+  planner.py          periodization + closed-set patches
+  workout_dsl.py      structured workouts
+  garmin_workout.py   DSL → Garmin workout-service JSON
+  library.py          built-in session templates
   store.py            SQLite + compact JSON export
   cli.py              login / pull / push / link / sync / doctor
   core.py             pull / fill_the_blank / push / link / sync

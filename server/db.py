@@ -55,12 +55,13 @@ def window(user_id: int, start: str | None,
                 handle.activities_between(user_id, start, end))
 
 
-def ingest(user_id: int, activities: list[dict], days: list[dict]) -> dict:
+def ingest(user_id: int, activities: list[dict], days: list[dict],
+           meta: dict | None = None) -> dict:
     """Upsert a pushed bundle. Idempotent: re-pushing the same range only
     refreshes rows whose summaries changed, which is what late device syncs
     and Garmin's own overnight revisions produce.
     """
-    stored = {"activities": 0, "days": 0, "skipped": 0}
+    stored = {"activities": 0, "days": 0, "meta": 0, "skipped": 0}
     with store() as handle:
         for activity in activities:
             if not isinstance(activity, dict) or activity.get("id") is None:
@@ -74,8 +75,22 @@ def ingest(user_id: int, activities: list[dict], days: list[dict]) -> dict:
                 continue
             handle.upsert_day(user_id, day)
             stored["days"] += 1
+        for key, value in (meta or {}).items():
+            handle.set_meta(user_id, key, value)
+            stored["meta"] += 1
         handle.commit()
+    try:
+        from . import planning
+        stored["matched"] = planning.match_completed(user_id)
+    except Exception:
+        stored["matched"] = 0
     return stored
+
+
+def meta(user_id: int) -> dict:
+    """Zones, personal records and predictions as last pulled."""
+    with store() as handle:
+        return handle.meta(user_id)
 
 
 def get_briefing(user_id: int, day: str) -> str | None:

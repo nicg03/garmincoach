@@ -140,7 +140,44 @@ def build_context(user_id: int) -> str:
         "## Sessions in the last 4 weeks\n" + _activity_table(recent),
         "## Where things stand right now\n"
         + json.dumps(everything["headline"], default=str),
+        _pacing_context(user_id, all_activities),
     ])
+
+
+def _pacing_context(user_id: int, activities: list[dict]) -> str:
+    """Paces and today's planned session so the coach doesn't fight the plan."""
+    from garmin_sync.performance import build as build_perf
+    chunks = ["## Training paces (Daniels, min/km)"]
+    try:
+        perf = build_perf(activities)
+        paces = perf.get("paces") or {}
+        slim = {k: paces.get(k) for k in (
+            "easy", "easy_range", "marathon", "threshold", "interval", "rep",
+            "goal", "source", "note", "vdot") if paces.get(k)}
+        chunks.append(json.dumps(slim, default=str))
+    except Exception:
+        chunks.append("(paces unavailable)")
+    try:
+        with db.store() as handle:
+            plan = handle.active_plan(user_id)
+            if not plan:
+                plans = handle.list_plans(user_id)
+                plan = plans[0] if plans else None
+        today = date.today().isoformat()
+        if plan:
+            session = next((s for s in (plan.get("sessions") or [])
+                            if s.get("date") == today), None)
+            chunks.append("## Today's planned session\n" + json.dumps({
+                "name": (session or {}).get("workout", {}).get("name") if session else None,
+                "kind": (session or {}).get("kind"),
+                "description": (session or {}).get("description"),
+                "purpose": (session or {}).get("purpose"),
+                "phase": (session or {}).get("phase"),
+                "race": (plan.get("headline") or {}).get("family"),
+            }, default=str))
+    except Exception:
+        pass
+    return "\n".join(chunks)
 
 
 def _messages(user_id: int, question: str,
