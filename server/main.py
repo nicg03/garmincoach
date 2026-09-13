@@ -378,6 +378,20 @@ def get_plan(plan_id: str | None = None,
     return {"plan": plan, "adherence": planning.adherence(user["id"])}
 
 
+@app.get("/api/insights")
+def get_insights(user: dict = Depends(security.current_user)):
+    return planning.pace_insights(user["id"])
+
+
+@app.post("/api/insights")
+def post_insights(payload: dict[str, Any] = Body(...),
+                  user: dict = Depends(security.current_user)):
+    try:
+        return planning.apply_pace_insights(user["id"], payload.get("action") or "")
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, 400)
+
+
 @app.post("/api/plan/generate")
 def post_plan(payload: dict[str, Any] = Body(...),
               user: dict = Depends(security.current_user)):

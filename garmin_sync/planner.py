@@ -343,9 +343,15 @@ def generate(race: dict, athlete: dict | None, activities: list[dict],
     avail = _availability(athlete or {})
     extras_set = set(extras or (athlete or {}).get("extras") or [])
     perf = build_performance(activities)
+    override = _num((athlete or {}).get("vdot"))
+    vdot = override or perf.get("vdot")
     paces = training_paces(
-        perf.get("vdot"), perf.get("critical_speed"),
+        vdot, perf.get("critical_speed"),
         race.get("goal_time"), race.get("distance_m"))
+    offset = _num((athlete or {}).get("pace_offset_s"))
+    if offset:
+        from .insights import shift_paces
+        paces = shift_paces(paces, offset)
 
     built = metrics.build(days, activities)
     history_loads = [row.get("load") or 0 for row in built.get("training") or []]
@@ -475,7 +481,7 @@ def generate(race: dict, athlete: dict | None, activities: list[dict],
         "headline": {
             "weeks": weeks,
             "sessions": len(sessions_list),
-            "vdot": perf.get("vdot"),
+            "vdot": vdot,
             "paces": paces,
             "family": family,
             "weekly_km_now": round(current_km, 1),

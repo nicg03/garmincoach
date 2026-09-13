@@ -11,7 +11,7 @@ import json
 from datetime import date, timedelta
 from uuid import uuid4
 
-from garmin_sync import garmin_workout, library, metrics, performance, planner
+from garmin_sync import garmin_workout, insights, library, metrics, performance, planner
 from garmin_sync.workout_dsl import WorkoutError, validate
 
 from . import coach, config, db
@@ -297,6 +297,11 @@ def match_completed(user_id: int) -> int:
             session["activity_id"] = activity.get("id")
             session["state"] = "completed"
             session["completed_load"] = activity.get("training_load")
+            review = insights.review_session(session, activity)
+            if review:
+                session["completed_pace"] = review.get("actual")
+                session["target_pace"] = review.get("target")
+                session["pace_status"] = review.get("status")
             handle.upsert_session(user_id, plan["id"], session)
             matched += 1
         handle.commit()
@@ -548,3 +553,56 @@ def save_template(user_id: int, payload: dict) -> dict:
     }
     with db.store() as handle:
         return handle.upsert_template(user_id, tmpl)
+
+
+def pace_insights(user_id: int) -> dict:
+    plan = handle_get_plan(user_id)
+    _days, activities = db.window(user_id, None, None)
+    return insights.analyze(plan, activities, athlete(user_id))
+
+
+def apply_pace_insights(user_id: int, action: str) -> dict:
+    """Accept or dismiss the current Pace Insights recommendation."""
+    action = (action or "").strip().lower()
+    if action not in ("accept", "dismiss"):
+        raise ValueError("Use accept or dismiss.")
+    body = pace_insights(user_id)
+    rec = body.get("recommendation")
+    if not rec:
+        raise ValueError("Nothing to apply yet.")
+    profile = dict(athlete(user_id))
+    if action == "dismiss":
+        profile["insights_dismissed"] = rec["fingerprint"]
+        with db.store() as handle:
+            handle.set_athlete(user_id, profile)
+        return {"ok": True, "insights": pace_insights(user_id)}
+
+    shift_s = rec["shift_s"]
+    profile["pace_offset_s"] = (profile.get("pace_offset_s") or 0) + shift_s
+    profile["insights_dismissed"] = rec["fingerprint"]
+    current_vdot = profile.get("vdot")
+    try:
+        current_vdot = float(current_vdot) if current_vdot is not None else None
+    except (TypeError, ValueError):
+        current_vdot = None
+    if current_vdot is None:
+        headline = ((handle_get_plan(user_id) or {}).get("headline") or {})
+        current_vdot = headline.get("vdot")
+    if current_vdot is not None:
+        profile["vdot"] = round(float(current_vdot) + (rec.get("vdot_delta") or 0), 1)
+    with db.store() as handle:
+        handle.set_athlete(user_id, profile)
+        plan = handle.active_plan(user_id) or (
+            handle.list_plans(user_id)[0] if handle.list_plans(user_id) else None)
+        if plan:
+            updated = insights.restamp_plan(plan, shift_s, _today())
+            updated["id"] = plan["id"]
+            updated["status"] = plan.get("status") or "draft"
+            updated["created"] = plan.get("created")
+            updated["race_id"] = plan.get("race_id")
+            handle.save_plan(user_id, updated)
+    return {
+        "ok": True,
+        "insights": pace_insights(user_id),
+        "plan": handle_get_plan(user_id),
+    }

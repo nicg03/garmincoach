@@ -175,6 +175,22 @@ def _pacing_context(user_id: int, activities: list[dict]) -> str:
                 "phase": (session or {}).get("phase"),
                 "race": (plan.get("headline") or {}).get("family"),
             }, default=str))
+            try:
+                from garmin_sync import insights
+                body = insights.analyze(plan, activities, None)
+                rec = body.get("recommendation")
+                slim = [{
+                    "date": r.get("date"), "status": r.get("status"),
+                    "target": r.get("target"), "actual": r.get("actual"),
+                } for r in (body.get("reviews") or [])[-5:]]
+                if slim or rec:
+                    chunks.append("## Pace Insights (do not change paces unless the athlete accepted)\n"
+                                  + json.dumps({
+                                      "reviews": slim,
+                                      "recommendation": (rec or {}).get("summary"),
+                                  }, default=str))
+            except Exception:
+                pass
     except Exception:
         pass
     return "\n".join(chunks)

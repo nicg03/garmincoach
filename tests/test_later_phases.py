@@ -221,3 +221,71 @@ def test_long_cap_and_hard_days_not_adjacent():
         hard = sorted(set(hard))
         for a, b in zip(hard, hard[1:]):
             assert b - a != 1
+
+
+def _quality_activity(day, work_s, n=4):
+    easy = [{"distance_m": 1000, "duration_s": 310}]
+    work = [{"distance_m": 1000, "duration_s": work_s} for _ in range(n)]
+    return {
+        "id": day, "type": "running", "start": f"{day} 07:00:00",
+        "distance_m": 1000 * (1 + n), "duration_s": 310 + work_s * n,
+        "splits": easy + work,
+    }
+
+
+def test_pace_insights_too_fast_then_recommend():
+    from garmin_sync import insights, sessions
+    paces = performance.training_paces(50, None)
+    workout = sessions.compose("tempo", paces, weekly_km=45)
+    target = insights.work_target(workout)
+    assert target and target["mid_s"]
+    session = {"id": "s1", "date": "2026-09-01", "kind": "tempo",
+               "workout": workout, "state": "completed", "activity_id": "2026-09-01"}
+    # ~20 s/km faster than T (~4:15)
+    review = insights.review_session(session, _quality_activity("2026-09-01", 235))
+    assert review["status"] == "too_fast"
+    assert review["confidence"] == "high"
+
+    sessions_list = []
+    activities = []
+    for i, day in enumerate(("2026-09-01", "2026-09-04", "2026-09-08")):
+        sessions_list.append({
+            "id": f"s{i}", "date": day, "kind": "tempo",
+            "workout": workout, "state": "completed", "activity_id": day,
+        })
+        activities.append(_quality_activity(day, 235))
+    body = insights.analyze({"sessions": sessions_list}, activities, {})
+    assert body["recommendation"]
+    assert body["recommendation"]["direction"] == "faster"
+    assert body["recommendation"]["shift_s"] < 0
+
+    dismissed = insights.analyze(
+        {"sessions": sessions_list}, activities,
+        {"insights_dismissed": body["recommendation"]["fingerprint"]})
+    assert dismissed["recommendation"] is None
+
+    restamped = insights.restamp_plan(
+        {"sessions": sessions_list + [{
+            "id": "future", "date": "2026-10-01", "kind": "tempo",
+            "workout": workout, "state": "planned",
+        }]}, body["recommendation"]["shift_s"], "2026-09-12")
+    future = next(s for s in restamped["sessions"] if s["id"] == "future")
+    done = next(s for s in restamped["sessions"] if s["id"] == "s0")
+    new_target = insights.work_target(future["workout"])
+    old_target = insights.work_target(done["workout"])
+    assert new_target["mid_s"] < old_target["mid_s"]
+    assert done["workout"]["steps"] == workout["steps"]
+
+
+def test_athlete_vdot_override_shifts_generated_paces():
+    today = date.today().isoformat()
+    race = {"id": "r1", "name": "City Half",
+            "date": (date.today() + timedelta(days=70)).isoformat(),
+            "distance_m": 21097}
+    acts = [{"id": 1, "type": "running", "start": "2026-08-01 08:00:00",
+             "distance_m": 5000, "duration_s": 1200}]
+    plain = planner.generate(race, {}, acts, [], today=today)
+    bumped = planner.generate(race, {"vdot": 55}, acts, [], today=today)
+    a = (plain["headline"]["paces"] or {}).get("threshold")
+    b = (bumped["headline"]["paces"] or {}).get("threshold")
+    assert a and b and a != b

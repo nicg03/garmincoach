@@ -695,16 +695,18 @@ function sessionKind(s) {
 }
 
 async function loadPlanTab() {
-  const [races, planBody, decision, perf] = await Promise.all([
+  const [races, planBody, decision, perf, insights] = await Promise.all([
     api('/api/races'),
     api('/api/plan'),
     api('/api/day/decide').catch(() => null),
     api('/api/performance').catch(() => ({})),
+    api('/api/insights').catch(() => ({})),
   ]);
   state.races = races.races || [];
   state.plan = planBody.plan;
   state.adherence = planBody.adherence;
   state.performance = perf;
+  state.insights = insights;
   renderRaces();
   renderPlan();
   renderDecision(decision);
@@ -814,6 +816,10 @@ function renderPlan() {
     $('#plan-headline').innerHTML = '';
     if ($('#pace-board')) $('#pace-board').innerHTML = '';
     if ($('#pace-source')) $('#pace-source').textContent = '';
+    if ($('#pace-insights')) {
+      $('#pace-insights').innerHTML = '';
+      $('#pace-insights').classList.add('hidden');
+    }
     if ($('#plan-weeks')) $('#plan-weeks').innerHTML = '';
     $('#plan-adherence').textContent = '';
     return;
@@ -828,6 +834,7 @@ function renderPlan() {
     tile('CTL at race', fmt(h.ctl_at_race), `now ${fmt(h.ctl_now)}`),
   ].join('');
   renderPaceBoard(h.paces || (state.performance && state.performance.paces) || {});
+  renderPaceInsights(state.insights || {});
   const adh = state.adherence || {};
   $('#plan-adherence').textContent = adh.planned
     ? `Adherence: ${adh.completed}/${adh.planned} done`
@@ -866,6 +873,74 @@ function renderPaceBoard(paces) {
       || (paces.source === 'vdot' && from.mark
         ? `Paces from VDOT ${fmt(paces.vdot, 1)} (${from.mark} ${from.time || ''}). Easy is a range; T/I/R are ± a few s/km.`
         : (paces.source ? `Paces from ${paces.source}.` : ''));
+  }
+}
+
+function paceStatusLabel(status) {
+  if (status === 'too_fast') return 'faster than target';
+  if (status === 'too_slow') return 'slower than target';
+  if (status === 'on_target') return 'on target';
+  return status || '';
+}
+
+function renderPaceInsights(body) {
+  const host = $('#pace-insights');
+  if (!host) return;
+  const reviews = body.reviews || [];
+  const rec = body.recommendation;
+  if (!reviews.length && !rec) {
+    host.innerHTML = '';
+    host.classList.add('hidden');
+    return;
+  }
+  host.classList.remove('hidden');
+  const bars = reviews.map((r) => {
+    const pct = Math.max(-12, Math.min(12, r.delta_pct || 0));
+    const left = 50 + (pct / 12) * 50;
+    const klass = r.status === 'on_target' ? 'ok' : (r.status === 'too_fast' ? 'fast' : 'slow');
+    return `<div class="insight-row">
+      <span class="d">${escapeHtml((r.date || '').slice(5))} · ${escapeHtml(r.name || r.kind || '')}</span>
+      <span class="bar"><i class="${klass}" style="left:${left}%"></i></span>
+      <span class="nums">${escapeHtml(r.actual || '—')} vs ${escapeHtml(r.target || '—')}</span>
+    </div>`;
+  }).join('');
+  let recHtml = '';
+  if (rec) {
+    recHtml = `<div class="insight-rec">
+      <p>${escapeHtml(rec.summary)}</p>
+      <div class="row-actions">
+        <button type="button" class="primary" id="insight-accept">Accept new paces</button>
+        <button type="button" class="ghost" id="insight-dismiss">Keep current</button>
+      </div>
+      <p class="muted">Nothing changes until you accept.</p>
+    </div>`;
+  } else if (reviews.length) {
+    recHtml = '<p class="muted">Quality days stay inside the planned range, or there are not enough split-backed sessions yet to recommend a change.</p>';
+  }
+  host.innerHTML = `<h3>Pace Insights</h3>
+    <p class="muted">Completed quality vs the range that was on the watch. A shift is only a suggestion.</p>
+    <div class="insight-list">${bars}</div>
+    ${recHtml}`;
+  const accept = $('#insight-accept');
+  const dismiss = $('#insight-dismiss');
+  if (accept) accept.addEventListener('click', () => applyInsight('accept'));
+  if (dismiss) dismiss.addEventListener('click', () => applyInsight('dismiss'));
+}
+
+async function applyInsight(action) {
+  try {
+    const body = await post('/api/insights', { action });
+    if (body.plan) state.plan = body.plan;
+    state.insights = body.insights || {};
+    renderPlan();
+  } catch (error) {
+    const host = $('#pace-insights');
+    if (host) {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = error.message;
+      host.appendChild(p);
+    }
   }
 }
 
@@ -970,6 +1045,7 @@ function showSessionSheet(session) {
     <h3>${escapeHtml(wo.name || sessionKind(session))}</h3>
     <p class="purpose muted">${escapeHtml(session.purpose || wo.purpose || '')}</p>
     <p>${escapeHtml(session.description || wo.description || '')}</p>
+    ${session.completed_pace ? `<p class="muted">Done: ${escapeHtml(session.completed_pace)} vs ${escapeHtml(session.target_pace || 'target')} (${escapeHtml(paceStatusLabel(session.pace_status))})</p>` : ''}
     <table class="session-steps">
       <thead><tr><th>Step</th><th>Duration</th><th>Pace</th></tr></thead>
       <tbody>${steps || '<tr><td colspan="3">No structure.</td></tr>'}</tbody>
