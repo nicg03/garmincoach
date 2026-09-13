@@ -47,20 +47,34 @@ def usable(value: Any) -> Any:
     return None if failed(value) else value
 
 
+def _activity_items(raw: Any) -> list[dict]:
+    if failed(raw):
+        return []
+    if isinstance(raw, list):
+        return [item for item in raw if isinstance(item, dict)]
+    if not isinstance(raw, dict):
+        return []
+    for key in ("activityList", "activities"):
+        nested = raw.get(key)
+        if isinstance(nested, list):
+            return [item for item in nested if isinstance(item, dict)]
+    if raw.get("activityId") or raw.get("activity_id") or raw.get("id"):
+        return [raw]
+    return []
+
+
 def _activities_from(raw: Any) -> list[dict]:
     """Summaries for every activity in a raw activity-list response.
 
     Garmin's list endpoint is paginated, so a client may send either one page
     or several concatenated; both arrive here as a flat list.
     """
-    if failed(raw):
-        return []
-    items = raw if isinstance(raw, list) else [raw]
     out = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
+    for item in _activity_items(raw):
         summary = sm.summarize_activity(item)
+        if summary.get("id") is None:
+            summary["id"] = (item.get("activityId") or item.get("activity_id")
+                             or item.get("id"))
         if summary.get("id") is not None:
             out.append(summary)
     return out

@@ -25,8 +25,8 @@ const DEFAULT_HEADERS = {
 
 // Politeness, not performance. Garmin rate-limits, and a sync of a month is
 // a couple of hundred requests, so it goes in small batches with a gap.
-const BATCH_SIZE = 6;
-const BATCH_PAUSE_MS = 150;
+const BATCH_SIZE = 3;
+const BATCH_PAUSE_MS = 400;
 const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -65,7 +65,7 @@ function headers() {
  * costs the whole sync.
  */
 async function fetchOne(url, requestHeaders) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       const response = await fetch(url, {
         credentials: "include",
@@ -82,14 +82,14 @@ async function fetchOne(url, requestHeaders) {
           return { __error: "non-json" };
         }
       }
-      if (attempt === 0 && RETRY_STATUSES.has(response.status)) {
-        await sleep(1200);
+      if (RETRY_STATUSES.has(response.status) && attempt < 3) {
+        await sleep(1500 * (attempt + 1));
         continue;
       }
       return { __error: response.status };
     } catch (error) {
-      if (attempt === 0) {
-        await sleep(600);
+      if (attempt < 3) {
+        await sleep(600 * (attempt + 1));
         continue;
       }
       return { __error: "fetch-failed", __detail: String(error) };

@@ -235,6 +235,14 @@ async function fetchAndPublish(tabId, siteUrl, token, base, specs) {
       body: { source: "extension", results },
     });
   }
+  const saved = stored?.stored || {};
+  if (specs.length && !(saved.activities || saved.days || stored?.activities || stored?.days)) {
+    throw new Error(
+      "The site stored nothing. Keep connect.garmin.com open and signed in, " +
+        "use Sync now, and make sure the extension is connected to the same " +
+        "account you're viewing on the site."
+    );
+  }
   return { stored, failures, results: allResults };
 }
 
@@ -274,7 +282,7 @@ async function runSync({ full = false, pages = 1, days } = {}) {
     const plan = await siteFetch(siteUrl, "/api/sync/fetchplan", {
       method: "POST",
       token: syncToken,
-      body: { profile, full, pages, days: days || 90 },
+      body: { profile, full, pages, days: days || 21 },
     });
 
     const specs = plan.specs || [];
@@ -307,9 +315,16 @@ async function runSync({ full = false, pages = 1, days } = {}) {
   }
 }
 
+function activityCount(value) {
+  if (Array.isArray(value)) return value.length;
+  if (value && Array.isArray(value.activityList)) return value.activityList.length;
+  if (value && Array.isArray(value.activities)) return value.activities.length;
+  return 0;
+}
+
 function countActivities(results) {
   return Object.entries(results || {}).reduce((n, [key, value]) => (
-    key.startsWith("activities::") && Array.isArray(value) ? n + value.length : n
+    key.startsWith("activities::") ? n + activityCount(value) : n
   ), 0);
 }
 

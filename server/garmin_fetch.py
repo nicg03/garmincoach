@@ -56,8 +56,11 @@ def display_name(profile: dict | None) -> str | None:
     """
     if not isinstance(profile, dict):
         return None
+    inner = profile.get("userProfile") or profile.get("userProfileDto")
+    if isinstance(inner, dict):
+        profile = {**profile, **inner}
     candidates = [profile.get(key) for key in
-                  ("displayName", "profileId", "garminGUID", "userName", "id")]
+                  ("displayName", "garminGUID", "profileId", "userName", "id")]
     uuidish = [c for c in candidates if isinstance(c, str) and c.count("-") >= 4]
     if uuidish:
         return uuidish[0]
@@ -189,8 +192,7 @@ def regroup(results: dict) -> dict:
             continue
         kind, _, suffix = label.partition("::")
         if kind == "activities":
-            if isinstance(value, list):
-                activities += value
+            activities += _activity_items(value)
         elif kind in DAY_LABELS and suffix:
             days.setdefault(suffix, {"date": suffix})[kind] = value
         elif not suffix:
@@ -199,3 +201,18 @@ def regroup(results: dict) -> dict:
     out["activities"] = activities
     out["days"] = [days[key] for key in sorted(days)]
     return out
+
+
+def _activity_items(value) -> list:
+    """Garmin sometimes returns a bare list, sometimes `{activityList: [...]}`."""
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if not isinstance(value, dict) or value.get("__error") is not None:
+        return []
+    for key in ("activityList", "activities"):
+        nested = value.get(key)
+        if isinstance(nested, list):
+            return [item for item in nested if isinstance(item, dict)]
+    if value.get("activityId") or value.get("activity_id") or value.get("id"):
+        return [value]
+    return []

@@ -40,9 +40,12 @@ def session_secret() -> str:
 
 def status(user_id: int) -> dict:
     with store() as handle:
+        meta = handle.meta(user_id)
+        last_ingest = (meta.get("last_ingest") or {}).get("value")
         return {
             "last": handle.last_day(user_id),
             "first": handle.first_day(user_id),
+            "last_ingest": last_ingest if isinstance(last_ingest, dict) else None,
             **handle.counts(user_id),
         }
 
@@ -76,6 +79,8 @@ def ingest(user_id: int, activities: list[dict], days: list[dict],
             handle.upsert_day(user_id, day)
             stored["days"] += 1
         for key, value in (meta or {}).items():
+            if key == "last_ingest":
+                continue
             handle.set_meta(user_id, key, value)
             stored["meta"] += 1
         handle.commit()

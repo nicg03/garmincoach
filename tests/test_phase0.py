@@ -76,6 +76,27 @@ def test_regroup_and_normalise_drop_failed_endpoints():
     assert "race_predictions" in meta
 
 
+def test_regroup_unwraps_activity_list_wrapper():
+    results = {
+        "activities::0": {
+            "activityList": [{
+                "activityId": 99,
+                "activityName": "Wrapped",
+                "activityType": {"typeKey": "running"},
+                "startTimeLocal": "2026-09-10 07:00:00",
+                "duration": 1800.0,
+                "distance": 5000.0,
+            }]
+        },
+        "daily::2026-09-10": {"__error": 404},
+    }
+    raw = garmin_fetch.regroup(results)
+    activities, days, _meta = ingest.normalise({"raw": raw})
+    assert len(activities) == 1
+    assert activities[0]["id"] == 99
+    assert days == []
+
+
 def test_summarize_keeps_zones_and_splits():
     summary = sm.summarize_activity({
         "activityId": 7,

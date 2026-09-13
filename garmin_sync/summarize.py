@@ -59,7 +59,7 @@ def summarize_activity(a: dict, full: bool = False) -> dict:
     if full:
         return a
     return {
-        "id": a.get("activityId"),
+        "id": a.get("activityId") or a.get("activity_id") or a.get("id"),
         "name": a.get("activityName"),
         "type": _g(a, "activityType", "typeKey"),
         "start": a.get("startTimeLocal"),

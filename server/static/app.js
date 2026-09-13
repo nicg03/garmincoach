@@ -1551,6 +1551,21 @@ async function boot() {
   const empty = !status.days && !status.activities;
   $('#onboarding').classList.toggle('hidden', !empty);
   $('#dashboard-body').classList.toggle('hidden', empty);
+  const who = $('#onboard-account');
+  if (who) {
+    const email = (status.user && status.user.email) || '';
+    who.textContent = email
+      ? `Signed in as ${email}. The extension must be connected to this same account and to this site address.`
+      : '';
+  }
+  const wait = $('#onboard-wait');
+  if (wait && empty) {
+    const last = status.last_ingest;
+    if (last && last.stored && !(last.stored.activities || last.stored.days)) {
+      wait.textContent = last.error
+        || 'Last sync stored nothing. Reload the extension (0.3.1), keep Garmin Connect open, then Sync now.';
+    }
+  }
 
   $('#coach-off').classList.toggle('hidden', !!status.coach);
   $('#coach-body').classList.toggle('hidden', !status.coach);

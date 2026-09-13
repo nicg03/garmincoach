@@ -592,7 +592,41 @@ def push(payload: dict[str, Any] = Body(...),
 
     activities, days, meta = ingest.normalise(payload)
     stored = db.ingest(user["id"], activities, days, meta)
-    return {"ok": True, "stored": stored, **db.status(user["id"])}
+    failures = 0
+    if isinstance(results, dict):
+        failures = sum(
+            1 for value in results.values()
+            if isinstance(value, dict) and "__error" in value)
+    info = {
+        "at": date.today().isoformat(),
+        "stored": stored,
+        "failures": failures,
+        "incoming_activities": len(activities),
+        "incoming_days": len(days),
+    }
+    with db.store() as handle:
+        handle.set_meta(user["id"], "last_ingest", info)
+        handle.commit()
+    print(
+        f"[garmin-sync] ingest user={user.get('email')} "
+        f"+{stored.get('activities', 0)} activities "
+        f"+{stored.get('days', 0)} days "
+        f"failures={failures}",
+        flush=True,
+    )
+    status = db.status(user["id"])
+    body = {"ok": True, "stored": stored, "failures": failures, **status}
+    sent_anything = bool(results) or bool(payload.get("raw")) or bool(
+        payload.get("activities") or payload.get("days"))
+    if (sent_anything and not status.get("activities") and not status.get("days")):
+        body["ok"] = False
+        body["error"] = (
+            "Garmin answered but nothing usable was stored. Keep "
+            "connect.garmin.com open and signed in, then Sync now again. "
+            "Use the same account the extension is connected to."
+        )
+        return JSONResponse(body, 422)
+    return body
 
 
 # ---- the browser extension --------------------------------------------------
