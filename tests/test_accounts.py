@@ -19,6 +19,7 @@ PASSWORD = "password1"
 def _setup(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "site.db")
     monkeypatch.setattr(config, "PUBLIC_URL", "https://coach.test")
+    monkeypatch.setattr(config, "ACCOUNT_EMAILS", True)
     monkeypatch.setattr(security, "_attempts", defaultdict(list))
     outbox: list[dict] = []
 
@@ -46,6 +47,14 @@ def _token(message, route):
     match = re.search(rf"https://coach\.test/#/{route}/([\w-]+)", message["text"])
     assert match, message["text"]
     return match.group(1)
+
+
+def test_account_emails_are_parked_until_a_domain_exists(tmp_path, monkeypatch):
+    outbox = _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "ACCOUNT_EMAILS", False)
+    _signup()
+    assert outbox == []
+    assert TestClient(app).get("/api/config").json()["email"] is False
 
 
 def test_signup_sends_a_verification_link(tmp_path, monkeypatch):
@@ -202,6 +211,7 @@ def test_cookies_without_a_session_version_still_work(tmp_path, monkeypatch):
 
 
 def test_mailer_posts_to_resend(monkeypatch):
+    monkeypatch.setattr(config, "ACCOUNT_EMAILS", True)
     monkeypatch.setattr(config, "RESEND_API_KEY", "re_test")
     seen = {}
 

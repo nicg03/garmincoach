@@ -65,8 +65,10 @@ GARMIN_TOKEN_KEY = os.environ.get("GARMIN_TOKEN_KEY", "")
 GARMIN_SYNC_HOURS = float(os.environ.get("GARMIN_SYNC_HOURS", "4"))
 GARMIN_SCHEDULER = os.environ.get("GARMIN_SCHEDULER", "1") != "0"
 
-# Account emails (verification, password reset) go through Resend. Without a
-# key the links are printed to the log instead, which is enough locally.
+# Account emails (verification, password reset, email change) go through Resend.
+# Off until a sending domain is verified there: sign-in is email + password only.
+# Flip ACCOUNT_EMAILS to True after RESEND_API_KEY and EMAIL_FROM are set.
+ACCOUNT_EMAILS = False
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "garmincoach <onboarding@resend.dev>")
 
@@ -95,7 +97,7 @@ def coach_enabled() -> bool:
 
 
 def email_enabled() -> bool:
-    return bool(RESEND_API_KEY)
+    return ACCOUNT_EMAILS and bool(RESEND_API_KEY)
 
 
 def coach_model() -> str:

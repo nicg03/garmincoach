@@ -177,14 +177,7 @@ The app reads `RAILWAY_VOLUME_MOUNT_PATH`, which Railway sets by itself, so
 | `OPENAI_API_KEY` | | Switches the coach on (GPT). Without it the site works, but Coaching says so. |
 | `ANTHROPIC_API_KEY` | | Alternative to OpenAI. Ignored if `OPENAI_API_KEY` is set. |
 
-For account emails (confirming an address, resetting a password, changing
-email) also set `RESEND_API_KEY`: create a key at [resend.com](https://resend.com),
-verify a domain you own there, and set `EMAIL_FROM` to an address on it, such
-as `garmincoach <coach@yourdomain.com>`. Without a verified domain Resend only
-delivers to your own address. Without a key, the links are printed to the
-deploy log instead, which is fine for you but not for anyone else.
-
-Everything else has a working
+That's the only one that changes anything. Everything else has a working
 default, including the secret that signs session cookies: it's generated on
 first boot and kept in the database on the volume, so sign-ins survive
 restarts without you configuring anything.
@@ -201,9 +194,6 @@ The rest, if you want them:
 | `SIGNUP_OPEN` | `1` | Set to `0` to stop new accounts without a redeploy. Existing users keep working. |
 | `MIN_PASSWORD` | `8` | Shortest password accepted at signup. |
 | `SESSION_DAYS` | `30` | How long a sign-in lasts. |
-| `RESEND_API_KEY` | | Sends account emails through Resend. Without it, links go to the log. |
-| `EMAIL_FROM` | `garmincoach <onboarding@resend.dev>` | Sender for account emails. Must be on a domain verified in Resend. |
-| `PUBLIC_URL` | `https://$RAILWAY_PUBLIC_DOMAIN` | Base of the links in emails. Railway's own domain is picked up by itself; set this for a custom domain. |
 | `SESSION_SECRET` | auto | Overrides the stored secret. Setting or changing it signs every device out -- the emergency lever if a cookie leaks. |
 | `DEFAULT_WINDOW_DAYS` | `90` | The dashboard's default range. |
 | `SYNC_REPO_URL` | this repo | Where new users are sent to get the sync tool. |
@@ -264,7 +254,7 @@ fresh the data is.
   365 / all range. The `?` next to a number explains it.
 - **Coaching**: the AI coach and your human coach in one place.
 - **Settings**: Profile (availability, heart rate, weight), Data sources and
-  Account (change password or email, sign out other devices, delete).
+  Account.
 
 Coach accounts get an **Athletes** area on top: a roster with form, load ratio,
 HRV and data freshness flagged green / amber / red, the requests waiting, and
@@ -377,10 +367,9 @@ the same cause: users live in the same file.
 - **It's health data on the public internet.** Passwords are scrypt-hashed,
   sessions are HMAC-signed and expire, sync tokens are 32 random bytes and can
   be replaced from Settings → Data sources, and sign-in attempts are throttled per
-  address. Changing or resetting a password signs out every other device.
-  Password reset needs email: without `RESEND_API_KEY` the reset link only
-  reaches the deploy log. The throttling lives in memory, so a restart resets
-  it. Nothing here has been through a security audit.
+  address. Email verification and password reset are in the code but parked
+  (`ACCOUNT_EMAILS`) until a sending domain is set up on Resend. Nothing here
+  has been through a security audit.
 - **One SQLite file.** Fine for a handful of people pushing once a day, which
   is what this is for. A real user base wants Postgres, which is roughly a
   day's work from here.

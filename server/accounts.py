@@ -9,6 +9,9 @@ token back -- a mail scanner that prefetches links can't burn or use them.
 The senders here run as background tasks, after the response has gone out.
 That keeps the forgot-password endpoint equally fast whether or not the
 address has an account.
+
+Parked: ACCOUNT_EMAILS is False until a Resend domain exists. The functions
+below stay so flipping that flag turns verification and reset back on.
 """
 from __future__ import annotations
 
@@ -46,6 +49,8 @@ def recently_sent(user_id: int, purpose: str) -> bool:
 
 
 def send_verification(base: str, user_id: int) -> None:
+    if not config.ACCOUNT_EMAILS:
+        return
     with db.store() as handle:
         user = handle.user_by_id(user_id)
         if not user or user["email_verified"]:
@@ -57,6 +62,8 @@ def send_verification(base: str, user_id: int) -> None:
 
 
 def send_reset(base: str, email: str) -> None:
+    if not config.ACCOUNT_EMAILS:
+        return
     with db.store() as handle:
         user = handle.user_by_email(email)
     if not user or recently_sent(user["id"], "reset"):
@@ -67,10 +74,14 @@ def send_reset(base: str, email: str) -> None:
 
 
 def send_email_change(base: str, user_id: int, new_email: str) -> None:
+    if not config.ACCOUNT_EMAILS:
+        return
     with db.store() as handle:
         token = handle.create_email_token(user_id, "email_change", new_email)
     mailer.confirm_new_email(new_email, link(base, "email", token))
 
 
 def notify_change(email: str, what: str) -> None:
+    if not config.ACCOUNT_EMAILS:
+        return
     mailer.account_changed(email, what)

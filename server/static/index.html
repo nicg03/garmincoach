@@ -8,9 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/css/tokens.css?v=21">
-<link rel="stylesheet" href="/static/css/layout.css?v=21">
-<link rel="stylesheet" href="/static/css/components.css?v=21">
+<link rel="stylesheet" href="/static/css/tokens.css?v=22">
+<link rel="stylesheet" href="/static/css/layout.css?v=22">
+<link rel="stylesheet" href="/static/css/components.css?v=22">
 </head>
 <body>
 
@@ -45,7 +45,8 @@
     </div>
     <button class="primary" type="submit" id="gate-submit">Sign in</button>
     <p class="error" id="gate-error" role="alert"></p>
-    <p class="gate-alt" id="gate-alt"><button type="button" class="link" id="gate-forgot">Forgot password?</button></p>
+    <!-- Forgot password: parked until a Resend domain exists (ACCOUNT_EMAILS). -->
+    <p class="gate-alt hidden" id="gate-alt"><button type="button" class="link" id="gate-forgot">Forgot password?</button></p>
   </form>
   <section class="gate-card hidden" id="gate-panel" aria-live="polite"></section>
 </div>
@@ -79,6 +80,6 @@
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script type="module" src="/static/js/main.js?v=21"></script>
+<script type="module" src="/static/js/main.js?v=22"></script>
 </body>
 </html>

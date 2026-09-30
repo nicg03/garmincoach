@@ -51,11 +51,13 @@ def startup_notes() -> list[str]:
     with db.store() as handle:
         notes.append(f"accounts: {handle.user_count()}")
     notes.append("signup: open" if config.SIGNUP_OPEN else "signup: closed")
-    if config.email_enabled():
+    if not config.ACCOUNT_EMAILS:
+        notes.append("email: parked until a Resend domain is set (ACCOUNT_EMAILS)")
+    elif config.email_enabled():
         notes.append(f"email: on (Resend, from {config.EMAIL_FROM})")
     else:
         notes.append("email: off, links go to this log (set RESEND_API_KEY)")
-    if not config.PUBLIC_URL:
+    if config.ACCOUNT_EMAILS and not config.PUBLIC_URL:
         notes.append("PUBLIC_URL is not set: email links will use the address "
                      "each request came in on.")
     if config.coach_enabled():
@@ -178,8 +180,10 @@ def signup(request: Request, response: Response, background: BackgroundTasks,
         return JSONResponse({"error": "That email already has an account."}, 409)
 
     security.sign_in(request, response, user)
-    background.add_task(accounts.send_verification, accounts.base_url(request),
-                        user["id"])
+    # Parked until a Resend domain exists. Then ACCOUNT_EMAILS = True.
+    if config.ACCOUNT_EMAILS:
+        background.add_task(accounts.send_verification, accounts.base_url(request),
+                            user["id"])
     return {"ok": True, "user": _public_user(user)}
 
 

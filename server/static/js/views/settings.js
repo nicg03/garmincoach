@@ -148,12 +148,14 @@ async function sources(host) {
 function account(host) {
   const status = state.status;
   const user = status.user || {};
+  // Change password / email / verify: parked until a Resend domain exists.
+  const emails = Boolean(state.site.email);
   const min = state.site.min_password || 8;
   const verified = user.email_verified ? 'Yes'
     : `Not yet · <button type="button" class="link" data-verify>Send link again</button>`;
   const pairs = [
     ['Email', esc(user.email || '')],
-    ['Email confirmed', verified],
+    ...(emails ? [['Email confirmed', verified]] : []),
     ['Account type', user.role === 'coach' ? 'Coach' : 'Athlete'],
     ['Member since', esc(user.since || '')],
   ];
@@ -164,9 +166,10 @@ function account(host) {
       ${rows(pairs)}
       <div class="row-actions" style="margin-top:14px">
         <button type="button" class="ghost" data-logout>Sign out</button>
-        <button type="button" class="ghost" data-revoke>Sign out other devices</button>
+        ${emails ? '<button type="button" class="ghost" data-revoke>Sign out other devices</button>' : ''}
       </div>
     </div>
+    ${emails ? `
     <div class="grid-2">
       <form class="card" data-password novalidate>
         <div class="card-head"><h2>Change password</h2></div>
@@ -187,7 +190,7 @@ function account(host) {
           <input type="password" name="password" autocomplete="current-password" required></label>
         <div class="row-actions"><button class="primary inline" type="submit">Send confirmation link</button></div>
       </form>
-    </div>
+    </div>` : ''}
     <div class="card danger">
       <div class="card-head"><h2>Delete account</h2></div>
       <p class="muted">Removes your account, every stored day and activity, plans, races, coach
@@ -207,44 +210,51 @@ function account(host) {
       toast(`Sent to ${user.email}`);
     }));
   }
-  $('[data-revoke]', host).addEventListener('click', async (event) => {
-    const ok = await confirmDialog({
-      title: 'Sign out other devices?',
-      body: 'Every other browser signed into this account has to sign in again. This one stays signed in.',
-      confirm: 'Sign them out',
+  const revoke = $('[data-revoke]', host);
+  if (revoke) {
+    revoke.addEventListener('click', async (event) => {
+      const ok = await confirmDialog({
+        title: 'Sign out other devices?',
+        body: 'Every other browser signed into this account has to sign in again. This one stays signed in.',
+        confirm: 'Sign them out',
+      });
+      if (!ok) return;
+      await busy(event.target, '…', async () => {
+        await post('/api/sessions/revoke');
+        toast('Other devices are signed out');
+      });
     });
-    if (!ok) return;
-    await busy(event.target, '…', async () => {
-      await post('/api/sessions/revoke');
-      toast('Other devices are signed out');
-    });
-  });
+  }
 
   const passwordForm = $('[data-password]', host);
-  passwordForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    busy($('button[type="submit"]', passwordForm), 'Saving…', async () => {
-      await post('/api/password/change', {
-        current: passwordForm.current.value,
-        password: passwordForm.password.value,
+  if (passwordForm) {
+    passwordForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      busy($('button[type="submit"]', passwordForm), 'Saving…', async () => {
+        await post('/api/password/change', {
+          current: passwordForm.current.value,
+          password: passwordForm.password.value,
+        });
+        passwordForm.reset();
+        toast('Password changed. Other devices are signed out.');
       });
-      passwordForm.reset();
-      toast('Password changed. Other devices are signed out.');
     });
-  });
+  }
 
   const emailForm = $('[data-email]', host);
-  emailForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    busy($('button[type="submit"]', emailForm), 'Sending…', async () => {
-      const body = await post('/api/email/change', {
-        email: emailForm.email.value.trim(),
-        password: emailForm.password.value,
+  if (emailForm) {
+    emailForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      busy($('button[type="submit"]', emailForm), 'Sending…', async () => {
+        const body = await post('/api/email/change', {
+          email: emailForm.email.value.trim(),
+          password: emailForm.password.value,
+        });
+        emailForm.reset();
+        toast(`Link sent to ${body.pending}. Open it to finish the change.`);
       });
-      emailForm.reset();
-      toast(`Link sent to ${body.pending}. Open it to finish the change.`);
     });
-  });
+  }
 
   $('[data-delete]', host).addEventListener('click', async () => {
     const ok = await confirmDialog({
