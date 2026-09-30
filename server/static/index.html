@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/styles.css?v=12">
+<link rel="stylesheet" href="/static/styles.css?v=13">
 </head>
 <body>
 
@@ -22,9 +22,17 @@
     <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required>
     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
     <div id="gate-role" class="role-picker hidden">
-      <span class="muted">I am a</span>
-      <label><input type="radio" name="gate-role" value="athlete" checked> Athlete</label>
-      <label><input type="radio" name="gate-role" value="coach"> Coach</label>
+      <p class="muted">I am a</p>
+      <div class="role-options">
+        <label class="role-option">
+          <input type="radio" name="gate-role" value="athlete" checked>
+          <span>Athlete</span>
+        </label>
+        <label class="role-option">
+          <input type="radio" name="gate-role" value="coach">
+          <span>Coach</span>
+        </label>
+      </div>
     </div>
     <button class="primary" type="submit" id="gate-submit">Sign in</button>
 

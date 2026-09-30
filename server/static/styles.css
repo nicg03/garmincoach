@@ -70,8 +70,9 @@ h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; letter-spacing: -.01em;
   padding: 28px 24px;
 }
 .gate-card .brand { display: block; margin-bottom: 8px; font-size: 22px; }
-.gate-card input { margin: 10px 0 0; }
-.gate-card input:first-of-type { margin-top: 18px; }
+.gate-card input[type="email"],
+.gate-card input[type="password"] { margin: 10px 0 0; width: 100%; }
+.gate-card input[type="email"] { margin-top: 18px; }
 .gate-card .primary { margin-top: 14px; }
 .gate-switch { margin: 10px 0 0; }
 
@@ -677,13 +678,63 @@ table .ghost { padding: 4px 10px; font-size: 12px; }
 
 .role-picker {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 14px;
+}
+.role-picker > .muted { margin: 0; }
+.role-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.role-option {
+  display: flex;
   align-items: center;
-  gap: 10px 16px;
-  margin-top: 12px;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  line-height: 1.2;
   font-size: 14px;
 }
-.role-picker label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.role-option input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+  background: transparent;
+  display: grid;
+  place-content: center;
+}
+.role-option input[type="radio"]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: transparent;
+}
+.role-option input[type="radio"]::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: scale(0);
+}
+.role-option input[type="radio"]:checked {
+  border-color: var(--accent);
+}
+.role-option input[type="radio"]:checked::after {
+  transform: scale(1);
+}
 
 .roster {
   display: grid;
