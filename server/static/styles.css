@@ -167,10 +167,13 @@ button:disabled { opacity: .4; cursor: default; }
   padding: 11px 16px;
   font-weight: 600;
   color: #fff;
-  background: var(--ink);
+  background: #111111;
   border: none;
 }
-.primary:hover:not(:disabled) { background: var(--accent); }
+.primary:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
 
 .ghost {
   padding: 7px 12px;
@@ -209,8 +212,8 @@ input:focus, textarea:focus, select:focus {
   font-weight: 500;
 }
 .chip.active {
-  background: var(--ink);
-  border-color: var(--ink);
+  background: #111111;
+  border-color: #111111;
   color: #fff;
 }
 
@@ -362,7 +365,7 @@ pre {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: var(--ink);
+  background: #111111;
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -476,7 +479,7 @@ code {
 
 .chat { display: grid; gap: 10px; margin: 10px 0; }
 .msg { padding: 10px 14px; border-radius: 10px; max-width: 92%; }
-.msg.me { background: var(--ink); color: #fff; justify-self: end; }
+.msg.me { background: #111111; color: #fff; justify-self: end; }
 .msg.claude { background: var(--bg); border: 1px solid var(--line); }
 .msg.claude.pending::after {
   content: "";
@@ -697,9 +700,12 @@ table .ghost { padding: 4px 10px; font-size: 12px; }
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink);
   cursor: pointer;
   line-height: 1.2;
   font-size: 14px;
+  font-weight: 500;
 }
 .role-option input[type="radio"] {
   appearance: none;
