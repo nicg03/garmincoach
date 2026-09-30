@@ -1,10 +1,11 @@
 /* Boot, the sign-in gate, the shell around every view, and the router that
    picks a view for the hash. Views live in ./views and render into a fresh
    frame, so a slow answer for a page you already left lands nowhere. */
-import { api, onUnauthorized } from './core/api.js';
+import { closePanel, isLinkRoute, openLink, showForgot } from './components/account-links.js';
+import { api, onUnauthorized, post } from './core/api.js';
 import { navigate, path, rerender, start } from './core/router.js';
 import { events, hasData, refreshStatus, role, state } from './core/state.js';
-import { $, $$, agoFromEpoch, errorCard, esc, loadingPage } from './core/ui.js';
+import { $, $$, agoFromEpoch, busy, errorCard, esc, loadingPage, toast } from './core/ui.js';
 import { destroyCharts, initCharts } from './core/charts.js';
 import { installGlossary } from './core/glossary.js';
 import * as athletes from './views/athletes.js';
@@ -103,6 +104,11 @@ let cleanup = null;
 let lastSection = null;
 
 async function onRoute(segments) {
+  if (isLinkRoute(segments)) {
+    clearTimeout(pollTimer);
+    openLink(segments, { done: () => boot() });
+    return;
+  }
   const [section, ...rest] = segments;
   if (!section || !VIEWS[section] || (section === 'athletes' && role() !== 'coach')) {
     navigate(home(), { replace: true });
@@ -154,8 +160,31 @@ function typing() {
   return el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
 }
 
+// ---- email verification banner --------------------------------------------------
+function renderBanner() {
+  const host = $('#account-banner');
+  const user = state.status.user || {};
+  // Without a mail provider there's nothing the user could click on.
+  if (!state.site.email || !user.email || user.email_verified) {
+    host.innerHTML = '';
+    return;
+  }
+  if (host.dataset.for === user.email && host.innerHTML) return;
+  host.dataset.for = user.email;
+  host.innerHTML = `<div class="banner warn">
+    <span>Confirm your email: we sent a link to <strong>${esc(user.email)}</strong>.
+      You'll need it to reset your password.</span>
+    <span class="spacer"></span>
+    <button type="button" class="ghost small" data-resend>Send again</button></div>`;
+  $('[data-resend]', host).addEventListener('click', (event) => busy(event.target, 'Sending…', async () => {
+    await post('/api/email/verify/send');
+    toast(`Sent to ${user.email}`);
+  }));
+}
+
 events.addEventListener('status', () => {
   renderPill();
+  renderBanner();
   schedulePoll();
 });
 events.addEventListener('data', () => {
@@ -175,6 +204,7 @@ function setMode(next) {
   $('#password').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
   $('#gate-role').classList.toggle('hidden', !signup);
   $('#password-hint').classList.toggle('hidden', !signup);
+  $('#gate-alt').classList.toggle('hidden', signup);
   updateHint();
   $('#gate-error').textContent = '';
 }
@@ -189,6 +219,7 @@ function updateHint() {
 
 function showGate(message = '') {
   clearTimeout(pollTimer);
+  closePanel();
   $('#shell').classList.add('hidden');
   $('#gate').classList.remove('hidden');
   $('#gate-error').textContent = message;
@@ -197,6 +228,7 @@ function showGate(message = '') {
 
 $$('#gate-tabs [data-mode]').forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
 $('#password').addEventListener('input', updateHint);
+$('#gate-forgot').addEventListener('click', () => showForgot($('#email').value.trim()));
 
 $('#gate-form').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -261,6 +293,11 @@ let started = false;
 async function boot() {
   state.site = await fetch('/api/config').then((r) => r.json()).catch(() => ({}));
   setMode(mode);
+  // Links from emails work whether or not this browser is signed in.
+  if (isLinkRoute(path())) {
+    openLink(path(), { done: () => boot() });
+    return;
+  }
   try {
     await refreshStatus();
   } catch {

@@ -90,17 +90,20 @@ def _sign(payload: bytes) -> str:
     return _b64(hmac.new(key, payload, hashlib.sha256).digest())
 
 
-def issue_session(user_id: int) -> str:
+def issue_session(user_id: int, version: int = 0) -> str:
+    """`sv` is the account's session version: changing the password bumps it,
+    which signs out every cookie issued before."""
     payload = json.dumps({
         "uid": user_id,
+        "sv": version,
         "exp": int(time.time()) + config.SESSION_DAYS * 86400,
     }).encode()
     return f"{_b64(payload)}.{_sign(payload)}"
 
 
-def session_user_id(token: str | None) -> int | None:
-    """The user this cookie belongs to, or None if it's absent, tampered with
-    or expired."""
+def session_claims(token: str | None) -> dict | None:
+    """The claims in this cookie, or None if it's absent, tampered with or
+    expired."""
     if not token:
         return None
     try:
@@ -114,10 +117,11 @@ def session_user_id(token: str | None) -> int | None:
         claims = json.loads(payload)
     except json.JSONDecodeError:
         return None
-    if claims.get("exp", 0) <= time.time():
+    if not isinstance(claims, dict) or claims.get("exp", 0) <= time.time():
         return None
-    uid = claims.get("uid")
-    return uid if isinstance(uid, int) else None
+    if not isinstance(claims.get("uid"), int):
+        return None
+    return claims
 
 
 # ---- throttling -------------------------------------------------------------
@@ -128,34 +132,43 @@ def _client(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def locked_out(request: Request) -> bool:
-    who = _client(request)
+def locked_out(request: Request, bucket: str = "auth") -> bool:
+    who = f"{bucket}:{_client(request)}"
     cutoff = time.time() - LOCKOUT_SECONDS
     _attempts[who] = [t for t in _attempts[who] if t > cutoff]
     return len(_attempts[who]) >= MAX_ATTEMPTS
 
 
-def record_failure(request: Request) -> None:
-    _attempts[_client(request)].append(time.time())
+def record_failure(request: Request, bucket: str = "auth") -> None:
+    _attempts[f"{bucket}:{_client(request)}"].append(time.time())
 
 
-def clear_failures(request: Request) -> None:
-    _attempts.pop(_client(request), None)
+def clear_failures(request: Request, bucket: str = "auth") -> None:
+    _attempts.pop(f"{bucket}:{_client(request)}", None)
 
 
 # ---- FastAPI dependencies ---------------------------------------------------
 def current_user(request: Request) -> dict:
     """The signed-in account, or a 401. Every data route depends on this, and
     everything downstream is scoped to the id it returns."""
-    user_id = session_user_id(request.cookies.get(COOKIE_NAME))
-    if user_id is None:
+    claims = session_claims(request.cookies.get(COOKIE_NAME))
+    if claims is None:
         raise HTTPException(401, "Not signed in.")
     with db.store() as handle:
-        user = handle.user_by_id(user_id)
+        user = handle.user_by_id(claims["uid"])
     if not user:
         # The account was deleted while the cookie was still valid.
         raise HTTPException(401, "Not signed in.")
+    # Cookies from before session versions existed carry no `sv` and count as 0.
+    if claims.get("sv", 0) != user.get("session_version", 0):
+        raise HTTPException(401, "Signed out: your password or email changed.")
     return user
+
+
+def sign_in(request: Request, response, user: dict) -> None:
+    response.set_cookie(COOKIE_NAME,
+                        issue_session(user["id"], user.get("session_version", 0)),
+                        **cookie_kwargs(request))
 
 
 def user_from_sync_token(request: Request) -> dict:

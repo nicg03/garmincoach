@@ -65,6 +65,18 @@ GARMIN_TOKEN_KEY = os.environ.get("GARMIN_TOKEN_KEY", "")
 GARMIN_SYNC_HOURS = float(os.environ.get("GARMIN_SYNC_HOURS", "4"))
 GARMIN_SCHEDULER = os.environ.get("GARMIN_SCHEDULER", "1") != "0"
 
+# Account emails (verification, password reset) go through Resend. Without a
+# key the links are printed to the log instead, which is enough locally.
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "garmincoach <onboarding@resend.dev>")
+
+# The address links in emails point at. Railway sets RAILWAY_PUBLIC_DOMAIN by
+# itself; building links from the request's Host header instead would let
+# anyone mint a reset email pointing at their own site.
+PUBLIC_URL = (os.environ.get("PUBLIC_URL")
+              or (f"https://{os.environ['RAILWAY_PUBLIC_DOMAIN']}"
+                  if os.environ.get("RAILWAY_PUBLIC_DOMAIN") else "")).rstrip("/")
+
 # Shown to new users so they know where to get the sync tool.
 SYNC_REPO_URL = os.environ.get(
     "SYNC_REPO_URL", "https://github.com/nicg03/garmincoach")
@@ -80,6 +92,10 @@ def coach_provider() -> str | None:
 
 def coach_enabled() -> bool:
     return coach_provider() is not None
+
+
+def email_enabled() -> bool:
+    return bool(RESEND_API_KEY)
 
 
 def coach_model() -> str:

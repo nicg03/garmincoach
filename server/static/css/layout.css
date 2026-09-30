@@ -54,6 +54,9 @@
 .gate-tabs button[aria-selected="true"] { background: var(--card); color: var(--ink); }
 .gate-card label { display: block; font-size: 13px; font-weight: 500; margin: 12px 0 4px; }
 .gate-card .primary { margin-top: 16px; }
+.gate-alt { margin: 14px 0 0; text-align: center; }
+.gate-panel-text { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+.gate-panel-text strong { color: var(--ink); }
 .field-hint { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
 .field-hint.ok { color: var(--ok); }
 

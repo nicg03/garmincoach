@@ -22,15 +22,16 @@ from datetime import date, timedelta
 from typing import Any
 import time
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import (BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query,
+                     Request, Response)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from garmin_sync import metrics
 
-from . import (coach, coaching, config, db, garmin_connect, garmin_export,
-               garmin_fetch, ingest, security)
+from . import (accounts, coach, coaching, config, db, garmin_connect,
+               garmin_export, garmin_fetch, ingest, security)
 from .store import EmailTaken
 
 STATIC_DIR = config.ROOT / "server" / "static"
@@ -50,6 +51,13 @@ def startup_notes() -> list[str]:
     with db.store() as handle:
         notes.append(f"accounts: {handle.user_count()}")
     notes.append("signup: open" if config.SIGNUP_OPEN else "signup: closed")
+    if config.email_enabled():
+        notes.append(f"email: on (Resend, from {config.EMAIL_FROM})")
+    else:
+        notes.append("email: off, links go to this log (set RESEND_API_KEY)")
+    if not config.PUBLIC_URL:
+        notes.append("PUBLIC_URL is not set: email links will use the address "
+                     "each request came in on.")
     if config.coach_enabled():
         notes.append(f"coach: on ({config.coach_provider()} / {config.coach_model()})")
     else:
@@ -109,6 +117,7 @@ def _public_user(user: dict) -> dict:
         "since": user["created"],
         "sync_token": user["sync_token"],
         "role": coaching.role_of(user),
+        "email_verified": bool(user.get("email_verified")),
     }
 
 
@@ -138,11 +147,12 @@ def site_config():
         "min_password": config.MIN_PASSWORD,
         "repo": config.SYNC_REPO_URL,
         "extension_zip": "/extension.zip",
+        "email": config.email_enabled(),
     }
 
 
 @app.post("/api/signup")
-def signup(request: Request, response: Response,
+def signup(request: Request, response: Response, background: BackgroundTasks,
            email: str = Body("", embed=True),
            password: str = Body("", embed=True),
            role: str = Body("athlete", embed=True)):
@@ -167,8 +177,9 @@ def signup(request: Request, response: Response,
         # hiding which emails exist buys anything.
         return JSONResponse({"error": "That email already has an account."}, 409)
 
-    response.set_cookie(security.COOKIE_NAME, security.issue_session(user["id"]),
-                        **security.cookie_kwargs(request))
+    security.sign_in(request, response, user)
+    background.add_task(accounts.send_verification, accounts.base_url(request),
+                        user["id"])
     return {"ok": True, "user": _public_user(user)}
 
 
@@ -186,8 +197,7 @@ def login(request: Request, response: Response,
         return JSONResponse({"error": "Wrong email or password."}, 401)
 
     security.clear_failures(request)
-    response.set_cookie(security.COOKIE_NAME, security.issue_session(user["id"]),
-                        **security.cookie_kwargs(request))
+    security.sign_in(request, response, user)
     return {"ok": True, "user": _public_user(user)}
 
 
@@ -208,6 +218,155 @@ def rotate_token(user: dict = Depends(security.current_user)):
     with db.store() as handle:
         token = handle.rotate_token(user["id"])
     return {"sync_token": token}
+
+
+# ---- email, password, sessions ----------------------------------------------
+LINK_INVALID = "This link is invalid, expired or already used."
+
+
+@app.post("/api/email/verify/send")
+def verify_send(request: Request, background: BackgroundTasks,
+                user: dict = Depends(security.current_user)):
+    if user["email_verified"]:
+        return {"ok": True, "verified": True}
+    if accounts.recently_sent(user["id"], "verify"):
+        return JSONResponse(
+            {"error": "An email just went out. Give it a minute."}, 429)
+    background.add_task(accounts.send_verification, accounts.base_url(request),
+                        user["id"])
+    return {"ok": True}
+
+
+@app.post("/api/email/verify")
+def verify_email(token: str = Body("", embed=True)):
+    with db.store() as handle:
+        row = handle.consume_email_token(token, "verify")
+        user = handle.user_by_id(row["user_id"]) if row else None
+        if not user or row["new_email"] != user["email"]:
+            return JSONResponse({"error": LINK_INVALID}, 400)
+        handle.mark_verified(user["id"])
+    return {"ok": True, "email": user["email"]}
+
+
+@app.post("/api/password/forgot")
+def password_forgot(request: Request, background: BackgroundTasks,
+                    email: str = Body("", embed=True)):
+    """The same answer whether or not the address has an account, so this
+    can't be used to find out who signed up."""
+    if security.locked_out(request, "forgot"):
+        return JSONResponse({"error": "Too many attempts. Try again later."}, 429)
+    security.record_failure(request, "forgot")
+    if not security.email_problem(email):
+        background.add_task(accounts.send_reset, accounts.base_url(request), email)
+    return {"ok": True}
+
+
+@app.post("/api/password/reset")
+def password_reset(request: Request, response: Response,
+                   background: BackgroundTasks,
+                   token: str = Body("", embed=True),
+                   password: str = Body("", embed=True)):
+    problem = security.password_problem(password)
+    if problem:
+        return JSONResponse({"error": problem}, 400)
+    with db.store() as handle:
+        row = handle.consume_email_token(token, "reset")
+        if not row or not handle.user_by_id(row["user_id"]):
+            return JSONResponse({"error": LINK_INVALID}, 400)
+        handle.set_password(row["user_id"], security.hash_password(password))
+        # Following the link proved the inbox is theirs.
+        handle.mark_verified(row["user_id"])
+        handle.bump_session_version(row["user_id"])
+        user = handle.user_by_id(row["user_id"])
+    security.clear_failures(request)
+    security.sign_in(request, response, user)
+    background.add_task(accounts.notify_change, user["email"], "password")
+    return {"ok": True, "user": _public_user(user)}
+
+
+@app.post("/api/password/change")
+def password_change(request: Request, response: Response,
+                    background: BackgroundTasks,
+                    current: str = Body("", embed=True),
+                    password: str = Body("", embed=True),
+                    user: dict = Depends(security.current_user)):
+    if security.locked_out(request):
+        return JSONResponse({"error": "Too many attempts. Try again later."}, 429)
+    if not security.password_matches(current, user["password"]):
+        security.record_failure(request)
+        return JSONResponse({"error": "Your current password is wrong."}, 400)
+    problem = security.password_problem(password)
+    if problem:
+        return JSONResponse({"error": problem}, 400)
+    with db.store() as handle:
+        handle.set_password(user["id"], security.hash_password(password))
+        handle.bump_session_version(user["id"])
+        user = handle.user_by_id(user["id"])
+    # Every other device is signed out; this one gets a fresh cookie.
+    security.sign_in(request, response, user)
+    background.add_task(accounts.notify_change, user["email"], "password")
+    return {"ok": True}
+
+
+@app.post("/api/email/change")
+def email_change(request: Request, background: BackgroundTasks,
+                 email: str = Body("", embed=True),
+                 password: str = Body("", embed=True),
+                 user: dict = Depends(security.current_user)):
+    if security.locked_out(request):
+        return JSONResponse({"error": "Too many attempts. Try again later."}, 429)
+    if not security.password_matches(password, user["password"]):
+        security.record_failure(request)
+        return JSONResponse({"error": "Your password is wrong."}, 400)
+    problem = security.email_problem(email)
+    if problem:
+        return JSONResponse({"error": problem}, 400)
+    new_email = email.strip().lower()
+    if new_email == user["email"]:
+        return JSONResponse({"error": "That's already your email."}, 400)
+    with db.store() as handle:
+        taken = handle.user_by_email(new_email) is not None
+    if taken:
+        return JSONResponse({"error": "That email already has an account."}, 409)
+    if accounts.recently_sent(user["id"], "email_change"):
+        return JSONResponse(
+            {"error": "An email just went out. Give it a minute."}, 429)
+    background.add_task(accounts.send_email_change, accounts.base_url(request),
+                        user["id"], new_email)
+    return {"ok": True, "pending": new_email}
+
+
+@app.post("/api/email/change/confirm")
+def email_change_confirm(request: Request, response: Response,
+                         background: BackgroundTasks,
+                         token: str = Body("", embed=True)):
+    with db.store() as handle:
+        row = handle.consume_email_token(token, "email_change")
+        old = handle.user_by_id(row["user_id"]) if row else None
+        if not old or not row["new_email"]:
+            return JSONResponse({"error": LINK_INVALID}, 400)
+        try:
+            handle.set_email(old["id"], row["new_email"])
+        except EmailTaken:
+            return JSONResponse(
+                {"error": "That email got an account in the meantime."}, 409)
+        handle.mark_verified(old["id"])
+        handle.bump_session_version(old["id"])
+        user = handle.user_by_id(old["id"])
+    security.sign_in(request, response, user)
+    background.add_task(accounts.notify_change, old["email"], "email address")
+    return {"ok": True, "user": _public_user(user)}
+
+
+@app.post("/api/sessions/revoke")
+def sessions_revoke(request: Request, response: Response,
+                    user: dict = Depends(security.current_user)):
+    """Signs out every other device; this one gets a fresh cookie."""
+    with db.store() as handle:
+        handle.bump_session_version(user["id"])
+        user = handle.user_by_id(user["id"])
+    security.sign_in(request, response, user)
+    return {"ok": True}
 
 
 # ---- Mac ↔ site linking -----------------------------------------------------

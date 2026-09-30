@@ -66,6 +66,7 @@ input:focus, textarea:focus, select:focus {
 }
 label.field { display: block; font-size: 13px; font-weight: 500; }
 label.field > span { display: block; margin-bottom: 4px; }
+.card > label.field { margin-top: 10px; }
 .form-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 10px 0; }
 .form-grid.days { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
 .form-grid .row-actions { grid-column: 1 / -1; }

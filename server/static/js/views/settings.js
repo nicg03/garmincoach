@@ -148,8 +148,12 @@ async function sources(host) {
 function account(host) {
   const status = state.status;
   const user = status.user || {};
+  const min = state.site.min_password || 8;
+  const verified = user.email_verified ? 'Yes'
+    : `Not yet · <button type="button" class="link" data-verify>Send link again</button>`;
   const pairs = [
     ['Email', esc(user.email || '')],
+    ['Email confirmed', verified],
     ['Account type', user.role === 'coach' ? 'Coach' : 'Athlete'],
     ['Member since', esc(user.since || '')],
   ];
@@ -160,7 +164,29 @@ function account(host) {
       ${rows(pairs)}
       <div class="row-actions" style="margin-top:14px">
         <button type="button" class="ghost" data-logout>Sign out</button>
+        <button type="button" class="ghost" data-revoke>Sign out other devices</button>
       </div>
+    </div>
+    <div class="grid-2">
+      <form class="card" data-password novalidate>
+        <div class="card-head"><h2>Change password</h2></div>
+        <p class="muted">Other devices get signed out; this one stays signed in.</p>
+        <label class="field"><span>Current password</span>
+          <input type="password" name="current" autocomplete="current-password" required></label>
+        <label class="field"><span>New password</span>
+          <input type="password" name="password" autocomplete="new-password" required></label>
+        <p class="field-hint">At least ${min} characters.</p>
+        <div class="row-actions"><button class="primary inline" type="submit">Change password</button></div>
+      </form>
+      <form class="card" data-email novalidate>
+        <div class="card-head"><h2>Change email</h2></div>
+        <p class="muted">We send a link to the new address. Nothing changes until you open it.</p>
+        <label class="field"><span>New email</span>
+          <input type="email" name="email" autocomplete="email" required></label>
+        <label class="field"><span>Password</span>
+          <input type="password" name="password" autocomplete="current-password" required></label>
+        <div class="row-actions"><button class="primary inline" type="submit">Send confirmation link</button></div>
+      </form>
     </div>
     <div class="card danger">
       <div class="card-head"><h2>Delete account</h2></div>
@@ -174,6 +200,52 @@ function account(host) {
     location.hash = '';
     location.reload();
   });
+  const resend = $('[data-verify]', host);
+  if (resend) {
+    resend.addEventListener('click', () => busy(resend, 'Sending…', async () => {
+      await post('/api/email/verify/send');
+      toast(`Sent to ${user.email}`);
+    }));
+  }
+  $('[data-revoke]', host).addEventListener('click', async (event) => {
+    const ok = await confirmDialog({
+      title: 'Sign out other devices?',
+      body: 'Every other browser signed into this account has to sign in again. This one stays signed in.',
+      confirm: 'Sign them out',
+    });
+    if (!ok) return;
+    await busy(event.target, '…', async () => {
+      await post('/api/sessions/revoke');
+      toast('Other devices are signed out');
+    });
+  });
+
+  const passwordForm = $('[data-password]', host);
+  passwordForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    busy($('button[type="submit"]', passwordForm), 'Saving…', async () => {
+      await post('/api/password/change', {
+        current: passwordForm.current.value,
+        password: passwordForm.password.value,
+      });
+      passwordForm.reset();
+      toast('Password changed. Other devices are signed out.');
+    });
+  });
+
+  const emailForm = $('[data-email]', host);
+  emailForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    busy($('button[type="submit"]', emailForm), 'Sending…', async () => {
+      const body = await post('/api/email/change', {
+        email: emailForm.email.value.trim(),
+        password: emailForm.password.value,
+      });
+      emailForm.reset();
+      toast(`Link sent to ${body.pending}. Open it to finish the change.`);
+    });
+  });
+
   $('[data-delete]', host).addEventListener('click', async () => {
     const ok = await confirmDialog({
       title: 'Delete your account?',

@@ -14,6 +14,7 @@ costs microseconds.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import sqlite3
@@ -167,7 +168,20 @@ CREATE TABLE IF NOT EXISTS garmin_accounts (
     needs_login   INTEGER NOT NULL DEFAULT 0,
     backfill      TEXT
 );
+CREATE TABLE IF NOT EXISTS email_tokens (
+    token_hash  TEXT PRIMARY KEY,
+    user_id     INTEGER NOT NULL,
+    purpose     TEXT NOT NULL,
+    new_email   TEXT,
+    created     REAL NOT NULL,
+    expires     REAL NOT NULL,
+    used        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS email_tokens_user ON email_tokens(user_id, purpose);
 """
+
+# How long a link in an email stays valid.
+EMAIL_TOKEN_TTL = {"verify": 48 * 3600, "reset": 3600, "email_change": 24 * 3600}
 
 VALID_ROLES = frozenset({"athlete", "coach"})
 LINK_STATUSES = frozenset({"pending", "accepted", "rejected"})
@@ -184,6 +198,10 @@ def new_token() -> str:
 
 def normalise_email(email: str) -> str:
     return (email or "").strip().lower()
+
+
+def _hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 class Store:
@@ -205,6 +223,12 @@ class Store:
         if "role" not in cols:
             self.conn.execute(
                 "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'athlete'")
+        if "email_verified" not in cols:
+            self.conn.execute(
+                "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
+        if "session_version" not in cols:
+            self.conn.execute(
+                "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0")
 
     def close(self):
         self.conn.close()
@@ -284,7 +308,7 @@ class Store:
         for table in ("activities", "days", "garmin_meta", "briefings",
                       "coach_usage", "pairings", "athlete", "races", "plans",
                       "plan_sessions", "workout_templates", "decisions",
-                      "garmin_accounts"):
+                      "garmin_accounts", "email_tokens"):
             self.conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         self.conn.execute(
             "DELETE FROM coaching_links WHERE athlete_id = ? OR coach_id = ?",
@@ -297,6 +321,70 @@ class Store:
 
     def user_count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
+
+    def set_password(self, user_id: int, password_hash: str) -> None:
+        self.conn.execute("UPDATE users SET password = ? WHERE id = ?",
+                          (password_hash, user_id))
+        self.commit()
+
+    def set_email(self, user_id: int, email: str) -> None:
+        try:
+            self.conn.execute("UPDATE users SET email = ? WHERE id = ?",
+                              (normalise_email(email), user_id))
+        except sqlite3.IntegrityError as e:
+            raise EmailTaken(email) from e
+        self.commit()
+
+    def mark_verified(self, user_id: int) -> None:
+        self.conn.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (user_id,))
+        self.commit()
+
+    def bump_session_version(self, user_id: int) -> int:
+        self.conn.execute(
+            "UPDATE users SET session_version = session_version + 1 WHERE id = ?",
+            (user_id,))
+        self.commit()
+        return self.user_by_id(user_id)["session_version"]
+
+    # ---- email links ----------------------------------------------------------
+    def create_email_token(self, user_id: int, purpose: str,
+                           new_email: str | None = None) -> str:
+        """A fresh single-use link. Only its hash is stored, and issuing one
+        cancels any earlier link for the same purpose."""
+        token = new_token()
+        now = time.time()
+        self.conn.execute(
+            "DELETE FROM email_tokens WHERE user_id = ? AND purpose = ?",
+            (user_id, purpose))
+        self.conn.execute(
+            "INSERT INTO email_tokens (token_hash, user_id, purpose, new_email, "
+            "created, expires) VALUES (?,?,?,?,?,?)",
+            (_hash(token), user_id, purpose,
+             normalise_email(new_email) if new_email else None,
+             now, now + EMAIL_TOKEN_TTL[purpose]))
+        self.commit()
+        return token
+
+    def last_email_token(self, user_id: int, purpose: str) -> float | None:
+        row = self.conn.execute(
+            "SELECT MAX(created) c FROM email_tokens WHERE user_id = ? AND purpose = ?",
+            (user_id, purpose)).fetchone()
+        return row["c"] if row else None
+
+    def consume_email_token(self, token: str, purpose: str) -> dict | None:
+        """The row behind a link, marked used, or None if it's unknown,
+        already used or expired."""
+        if not token:
+            return None
+        row = self.conn.execute(
+            "SELECT * FROM email_tokens WHERE token_hash = ? AND purpose = ?",
+            (_hash(token), purpose)).fetchone()
+        if not row or row["used"] or row["expires"] < time.time():
+            return None
+        self.conn.execute("UPDATE email_tokens SET used = 1 WHERE token_hash = ?",
+                          (row["token_hash"],))
+        self.commit()
+        return dict(row)
 
     # ---- pairing ------------------------------------------------------------
     def _purge_pairings(self) -> None:
