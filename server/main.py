@@ -9,12 +9,13 @@ Routes fall into four groups:
   - `POST /api/ingest`, where a Mac pushes summaries, identified by the
     account's own sync token rather than a cookie
 
-Everything reads from SQLite and computes on the fly. There's no background
-work and no cache to invalidate: a pull that takes a minute over the network
-takes milliseconds to aggregate here.
+Everything reads from SQLite and computes on the fly, with no cache to
+invalidate. The one piece of background work is the direct Garmin sync
+(`garmin_connect.scheduler`), which writes through the same ingest path.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
@@ -28,7 +29,8 @@ from fastapi.staticfiles import StaticFiles
 
 from garmin_sync import metrics
 
-from . import coach, coaching, config, db, garmin_export, garmin_fetch, ingest, security
+from . import (coach, coaching, config, db, garmin_connect, garmin_export,
+               garmin_fetch, ingest, security)
 from .store import EmailTaken
 
 STATIC_DIR = config.ROOT / "server" / "static"
@@ -54,6 +56,17 @@ def startup_notes() -> list[str]:
         notes.append("coach: off (set OPENAI_API_KEY or ANTHROPIC_API_KEY)")
     if config.coach_enabled() and config.COACH_DAILY_LIMIT:
         notes.append(f"coach limit: {config.COACH_DAILY_LIMIT} calls per user per day")
+    if garmin_connect.available():
+        with db.store() as handle:
+            connected = len(handle.garmin_connected_users())
+        notes.append(f"garmin direct: on, {connected} connected, sync every "
+                     f"{config.GARMIN_SYNC_HOURS:g}h"
+                     + ("" if config.GARMIN_SCHEDULER else " (scheduler off)"))
+        if not config.GARMIN_TOKEN_KEY:
+            notes.append("garmin direct: GARMIN_TOKEN_KEY is not set, so the "
+                         "token key lives in the database next to the tokens.")
+    else:
+        notes.append("garmin direct: off (garminconnect not installed)")
     return notes
 
 
@@ -61,14 +74,19 @@ def startup_notes() -> list[str]:
 async def lifespan(_app: FastAPI):
     for note in startup_notes():
         print(f"[garmin-sync] {note}", flush=True)
+    task = None
+    if config.GARMIN_SCHEDULER and garmin_connect.available():
+        task = asyncio.create_task(garmin_connect.scheduler())
     yield
+    if task:
+        task.cancel()
 
 
 app = FastAPI(title="Garmin Sync", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -108,17 +126,13 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.get("/styles.css", include_in_schema=False)
-@app.get("/app.js", include_in_schema=False)
-def legacy_static(request: Request):
-    name = request.url.path.rsplit("/", 1)[-1]
-    return FileResponse(STATIC_DIR / name)
-
-
 @app.get("/api/config")
 def site_config():
     """What the page needs before anyone has signed in."""
     return {
+        # The extension popup checks this to recognise the site in the
+        # active tab and offer a one-click connect.
+        "app": "garmincoach",
         "signup_open": config.SIGNUP_OPEN,
         "coach": config.coach_enabled(),
         "min_password": config.MIN_PASSWORD,
@@ -289,6 +303,8 @@ def status(user: dict = Depends(security.current_user)):
                           if config.COACH_DAILY_LIMIT else 0)
     info["user"] = _public_user(user)
     info["repo"] = config.SYNC_REPO_URL
+    garmin_connect.refresh_if_stale(user["id"])
+    info["garmin"] = garmin_connect.connection(user["id"])
     return info
 
 
@@ -771,6 +787,69 @@ def sync_ack(payload: dict[str, Any] = Body(...),
     if not isinstance(results, list):
         return JSONResponse({"error": "results must be a list"}, 400)
     return planning.ack_ops(user["id"], results)
+
+
+# ---- direct Garmin connection -----------------------------------------------
+# Signed in with the site's own cookie. The Garmin password passes through
+# once and is never stored; see garmin_connect.py.
+def _garmin_error(error: garmin_connect.GarminError, status: int = 400):
+    return JSONResponse({"error": str(error)}, status)
+
+
+@app.get("/api/garmin")
+def garmin_status(user: dict = Depends(security.current_user)):
+    return garmin_connect.connection(user["id"])
+
+
+@app.post("/api/garmin/connect")
+def garmin_connect_start(request: Request,
+                         email: str = Body("", embed=True),
+                         password: str = Body("", embed=True),
+                         user: dict = Depends(security.current_user)):
+    if security.locked_out(request):
+        return JSONResponse(
+            {"error": "Too many attempts. Wait a few minutes and try again."}, 429)
+    try:
+        result = garmin_connect.start_login(user["id"], email, password)
+    except garmin_connect.GarminError as e:
+        security.record_failure(request)
+        return _garmin_error(e)
+    return {**result, **garmin_connect.connection(user["id"])}
+
+
+@app.post("/api/garmin/mfa")
+def garmin_connect_mfa(request: Request,
+                       challenge_id: str = Body("", embed=True),
+                       code: str = Body("", embed=True),
+                       user: dict = Depends(security.current_user)):
+    if security.locked_out(request):
+        return JSONResponse(
+            {"error": "Too many attempts. Wait a few minutes and try again."}, 429)
+    try:
+        result = garmin_connect.finish_mfa(user["id"], challenge_id, code)
+    except garmin_connect.GarminError as e:
+        security.record_failure(request)
+        return _garmin_error(e)
+    return {**result, **garmin_connect.connection(user["id"])}
+
+
+@app.delete("/api/garmin/connect")
+def garmin_disconnect(user: dict = Depends(security.current_user)):
+    garmin_connect.disconnect(user["id"])
+    return garmin_connect.connection(user["id"])
+
+
+@app.post("/api/garmin/sync")
+def garmin_sync_now(history: bool = Body(False, embed=True),
+                    user: dict = Depends(security.current_user)):
+    info = garmin_connect.connection(user["id"])
+    if not info.get("connected"):
+        return JSONResponse({"error": "Garmin isn't connected."}, 400)
+    rounds = (garmin_connect.HISTORY_ROUNDS_FIRST if history
+              else garmin_connect.HISTORY_ROUNDS_TICK)
+    started = garmin_connect.kick(user["id"], history_rounds=rounds)
+    return {**garmin_connect.connection(user["id"]), "started": started,
+            "running": True}
 
 
 # ---- importing Garmin's own export -----------------------------------------

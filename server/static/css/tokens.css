@@ -1,0 +1,90 @@
+/* Design tokens and base elements. Everything else reads these variables. */
+:root {
+  --bg: #f6f6f4;
+  --card: #ffffff;
+  --ink: #111111;
+  --muted: #6b6b66;
+  --accent: #2154ff;
+  --accent-soft: #e8eeff;
+  --line: #ecece8;
+  --ok: #0f8a5a;
+  --ok-soft: #e3f4ec;
+  --warn: #c97812;
+  --warn-soft: #fbf0e0;
+  --bad: #d63b3b;
+  --bad-soft: #fbe6e6;
+  --solid: #111111;
+  --on-solid: #ffffff;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --sidebar: 224px;
+  --topbar: 56px;
+  --bottombar: 64px;
+  --shadow-pop: 0 12px 32px rgba(17, 17, 17, .14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e0e0d;
+    --card: #171716;
+    --ink: #f2f2ee;
+    --muted: #8d8d86;
+    --accent: #6b8cff;
+    --accent-soft: #1c2440;
+    --line: #2a2a27;
+    --ok-soft: #12291f;
+    --warn-soft: #2e2413;
+    --bad-soft: #2f1616;
+    --solid: #f2f2ee;
+    --on-solid: #111111;
+    --shadow-pop: 0 12px 32px rgba(0, 0, 0, .5);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body { min-height: 100%; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--bg);
+  font: 15px/1.5 var(--font);
+  -webkit-text-size-adjust: 100%;
+}
+
+.hidden { display: none !important; }
+.muted { color: var(--muted); font-size: 13px; }
+.error { color: var(--bad); font-size: 13px; min-height: 18px; margin: 6px 0 0; }
+.ok-text { color: var(--ok); }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;
+}
+
+h1 { font-size: 22px; margin: 0; font-weight: 600; letter-spacing: -.03em; }
+h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; letter-spacing: -.01em; }
+h3 { font-size: 14px; margin: 0 0 4px; font-weight: 600; }
+
+a { color: var(--accent); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+code {
+  font: 12px/1.5 var(--mono);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+pre {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  overflow-x: auto;
+  font: 12px/1.5 var(--mono);
+}

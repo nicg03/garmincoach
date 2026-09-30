@@ -1,7 +1,11 @@
 # The deployed site. Railway installs from this file, so Playwright is
-# deliberately absent: the container never touches Garmin.
+# deliberately absent: the container never drives a browser. garminconnect
+# talks to Garmin over plain HTTPS for the direct connection.
 fastapi>=0.115
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9
 openai>=1.40
 anthropic>=0.40
+garminconnect>=0.3.2
+curl_cffi>=0.7
+cryptography>=42

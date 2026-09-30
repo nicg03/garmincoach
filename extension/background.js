@@ -154,7 +154,7 @@ async function ensureGarminTab() {
     await waitForContentScript(existing.id);
     return { tabId: existing.id, created: false };
   }
-  const tab = await chrome.tabs.create({ url: GARMIN_HOME, active: true });
+  const tab = await chrome.tabs.create({ url: GARMIN_HOME, active: false });
   try {
     await waitForContentScript(tab.id);
   } catch (error) {

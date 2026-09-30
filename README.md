@@ -3,28 +3,29 @@
 Garmin data, published to a site anyone can sign up for, and handed to a coach
 so you can ask it things.
 
-The usual way in is a **browser extension**. It runs inside the Garmin Connect
-tab you are already signed into — no Python, no extra login, no MFA to repeat.
-For years of history, drop Garmin's official export zip on the site instead.
+The usual way in is **Connect Garmin** on the site: sign in to Garmin once
+(email, password, and the code if Garmin asks for one), and the server keeps
+your data up to date by itself every few hours. Your password is used for that
+one sign-in and never stored; what's kept is an encrypted access token you can
+revoke from Settings → Data sources.
 
-The original computer sync is still there as a fallback. Two halves, and the
-split still matters:
+Two fallbacks feed the same pipeline: a **browser extension** that syncs
+through the Garmin Connect tab you're already signed into, and Garmin's
+official **export zip** for years of history in one go. The original computer
+sync is still there too.
 
 ```mermaid
 flowchart LR
   Watch["Watch"] --> Garmin["Garmin Connect"]
-  Garmin <-->|"same browser session"| Ext["Browser extension"]
-  Ext -->|"POST /api/ingest"| Site["The site on Railway"]
+  Site["The site on Railway"] <-->|"direct connection, encrypted tokens"| Garmin
+  Garmin <-->|"same browser session"| Ext["Fallback: browser extension"]
+  Ext -->|"POST /api/ingest"| Site
   Zip["Official Garmin export zip"] -->|"drag and drop"| Site
   Mac["Fallback: garmin_sync on a computer"] -->|"POST /api/ingest"| Site
   Site --> Volume["site.db on a volume, one row set per account"]
   Site --> Claude["Coach API"]
   Phone["Any browser, anywhere"] --> Site
 ```
-
-The computer does the fetching because that's the only place it can be done.
-The site does the looking and the thinking, because that's what you want from
-the sofa.
 
 ## Multi-user, with one honest limitation
 
@@ -34,29 +35,45 @@ own password, its own sync token, its own history. No query in
 that id in its primary key, so one person's numbers cannot end up in another
 person's charts.
 
-What the site **cannot** do is fetch from Garmin on a user's behalf. Garmin's
-login needs a real browser and Cloudflare clearance tied to that browser.
-The extension solves this by running *inside* the Garmin tab you already
-use: same session, same cookies, no extra login. A one-off official export
-zip covers the past. The Python sync on your own computer remains as a
-fallback. The site is the dashboard and the coach; talking to Garmin always
-happens in a real browser.
+The limitation: the direct connection signs in the way Garmin's mobile app
+does, through [`garminconnect`](https://github.com/cyberjunky/python-garminconnect)
+0.3+, which presents a browser-like TLS fingerprint (`curl_cffi`) to get past
+Cloudflare. It works today, but it's unofficial, and datacentre IPs are the
+first thing Cloudflare tightens on. If the server gets blocked, the extension
+(which runs inside your own browser) and the export zip keep working, and the
+site says "Reconnect Garmin" instead of failing silently. Run
+`python scripts/garmin_spike.py --email you@example.com` locally and through
+`railway ssh` to check both before you rely on it.
 
-## Why it works this way
+### How the direct connection works
 
-The old Python libraries (`garth`, `python-garminconnect`) broke in early 2026:
-Garmin changed their login flow and Cloudflare now blocks known HTTP-library
-fingerprints. A **real browser** isn't blocked. So this drives a persistent
+- `POST /api/garmin/connect` signs in; if Garmin wants a code it answers with
+  a `challenge_id` and `POST /api/garmin/mfa` finishes the sign-in. The
+  pending login lives in memory for five minutes.
+- Tokens are encrypted with Fernet ([`server/garmin_connect.py`](server/garmin_connect.py))
+  under `GARMIN_TOKEN_KEY`, or a key generated on first boot and kept in the
+  database. They're refreshed and re-saved after every sync, and deleted on
+  Disconnect or account deletion.
+- A scheduler in the app's lifespan syncs every connected account every
+  `GARMIN_SYNC_HOURS`, one at a time with jitter, and opening the site starts a
+  sync when the last one is over an hour old. Each run fetches the new days,
+  writes queued workouts to Garmin, then walks a little further back into the
+  history until it reaches the start.
+- The fetch plan is the same one the extension runs (`server/garmin_fetch.py`),
+  and the results go through the same `ingest.normalise`, so all sources store
+  identical rows. A per-user lock keeps two syncs of one account from
+  overlapping.
+
+## Why the computer sync works this way
+
+The old Python libraries (`garth`, `python-garminconnect` before 0.3) broke in
+early 2026: Garmin changed their login flow and Cloudflare blocked known
+HTTP-library fingerprints. A **real browser** isn't blocked. So this drives a persistent
 Chromium profile -- you log in by hand once (including MFA), the session is
 saved, and every later run reuses it headlessly. Data is then fetched by
 calling Garmin's own JSON endpoints under `connect.garmin.com/gc-api/` through
 the browser session, authenticated by its cookies -- exactly as the web app
 does. No password and no token ever touch the code.
-
-That also explains why the deployed site never talks to Garmin. Cloudflare
-clearance is tied to your IP and your login needs your hands on it, so a server
-in a datacentre would be locked out within a day. Each user's machine pushes
-summaries to the site instead, over one authenticated endpoint.
 
 ---
 
@@ -157,7 +174,7 @@ The app reads `RAILWAY_VOLUME_MOUNT_PATH`, which Railway sets by itself, so
 
 | Variable | | What it does |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | | Switches the coach on (GPT). Without it the site works, but the Coach tab says so. |
+| `OPENAI_API_KEY` | | Switches the coach on (GPT). Without it the site works, but Coaching says so. |
 | `ANTHROPIC_API_KEY` | | Alternative to OpenAI. Ignored if `OPENAI_API_KEY` is set. |
 
 That's the only one that changes anything. Everything else has a working
@@ -180,23 +197,29 @@ The rest, if you want them:
 | `SESSION_SECRET` | auto | Overrides the stored secret. Setting or changing it signs every device out -- the emergency lever if a cookie leaks. |
 | `DEFAULT_WINDOW_DAYS` | `90` | The dashboard's default range. |
 | `SYNC_REPO_URL` | this repo | Where new users are sent to get the sync tool. |
+| `GARMIN_TOKEN_KEY` | auto | Fernet key for the stored Garmin tokens. Without it a key is generated and kept in the database, next to the tokens; set it (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) so a copy of the database alone can't be used. Changing it asks every user to connect Garmin again. |
+| `GARMIN_SYNC_HOURS` | `4` | How often the server syncs each connected account. |
+| `GARMIN_SCHEDULER` | `1` | Set to `0` to stop background syncs; opening the site and **Sync now** still work. |
 
 **4. Optional: connect GitHub.** Link the repo to the service and every push to
 your chosen branch deploys itself, so `railway up` stops being part of your
 life.
 
-Then each user (you included) points their machine at it, once:
+Then each user signs up and clicks **Connect Garmin** on the first screen.
+That's it; the first weeks arrive within a minute and older history follows in
+the background.
+
+If the direct connection is blocked, the same screen offers the browser
+extension and the export zip under **Other ways to import**. The computer sync
+still works too:
 
 ```bash
 python -m garmin_sync link --url https://your-app.up.railway.app
 ```
 
 A browser opens on the site. Sign in if needed, click **Connect this computer**,
-and the sync token is saved locally — nobody copies it by hand. After that,
-`python -m garmin_sync sync` is the whole ritual (fetch what's missing, publish).
-
-The Account tab still shows the raw token for recovery, and the empty dashboard
-prints the same `link` command with the site URL filled in.
+and the sync token is saved locally. Settings → Data sources → Advanced shows
+the same command and the raw token for recovery.
 
 `railway.json` pins the start command and sets `overlapSeconds: 0`. That last
 one matters more than it looks: Railway normally runs the old and new
@@ -216,6 +239,27 @@ No variables needed. It writes `data/site.db` -- a different file from the
 tread on each other. Sign up with any email; nothing is sent anywhere.
 
 ## What the site shows
+
+Five areas, each with its own address (`#/today`, `#/training/calendar`,
+`#/insights/recovery`, …), so reload, back and links all work. A sidebar on
+desktop, a bottom bar on the phone, and a pill in the top bar that says how
+fresh the data is.
+
+- **Today**: a one-line read on readiness, today's session with keep / ease /
+  swap / rest, the six headline numbers, the next race, the coach's briefing
+  and the latest note from your human coach.
+- **Training**: Calendar (the plan, paces, pace check, send to watch), Races
+  (goals, feasibility, generate a plan) and Workouts (builder and library).
+- **Insights**: Load, Recovery, Performance and Activities, with a 30 / 90 /
+  365 / all range. The `?` next to a number explains it.
+- **Coaching**: the AI coach and your human coach in one place.
+- **Settings**: Profile (availability, heart rate, weight), Data sources and
+  Account.
+
+Coach accounts get an **Athletes** area on top: a roster with form, load ratio,
+HRV and data freshness flagged green / amber / red, the requests waiting, and
+each athlete's Training and Insights read-only, plus notes and assigning a
+workout.
 
 **Load and form.** Training load per day, then two exponential moving averages
 of it: ATL over 7 days is the fatigue you're carrying, CTL over 42 days is the
@@ -244,15 +288,15 @@ and training paces the planner uses.
 **Plan.** Add an A-race, generate a periodized block (base / build / peak /
 taper) with an 8% weekly-load cap and a projected form curve. Today's card
 can ease or rest the session if recovery is off. **Send to watch** queues
-the next two weeks; the extension writes them to Garmin on the following
-sync.
+the next two weeks; with the direct connection they're written to Garmin right
+away, otherwise the extension writes them on its next sync.
 
 **Workouts.** Build a structured session (run, bike, swim, strength),
 preview it, save it, or schedule it for a day. Same write path as the plan.
 
 ## The coach
 
-The Coach tab has two things: a briefing regenerated once a day and cached
+The AI coach has two things: a briefing regenerated once a day and cached
 (rereading it is free), and a chat box for follow-ups.
 
 What Claude gets isn't the raw database. It's three compact CSV tables -- the
@@ -289,11 +333,11 @@ may have moved that path; run `python -m garmin_sync doctor` to see the live
 paths and reconcile `garmin_sync/endpoints.py`.
 
 **`push` says 401.** The token in `data/config.json` isn't a token the site
-recognises -- most often because it was replaced from the Account tab. Run
+recognises -- most often because it was replaced from Settings → Data sources. Run
 `python -m garmin_sync link` again. **404** usually
 means the URL is wrong.
 
-**The Coach tab says the coach is off.** Neither `OPENAI_API_KEY` nor
+**Coaching says the AI coach is off.** Neither `OPENAI_API_KEY` nor
 `ANTHROPIC_API_KEY` is set on the service. The deploy log says so too: the app
 prints what it found on startup, including how many accounts exist and whether
 a volume is attached.
@@ -304,7 +348,14 @@ the same cause: users live in the same file.
 
 ## Honest caveats
 
-- **Fragile by nature.** The sync rides Garmin's web app. When they change the
+- **The direct connection is unofficial.** Garmin's developer API isn't taking
+  new applications, so it signs in like Garmin's own app. That's against the
+  spirit of Garmin's terms, it can break when Garmin changes their login, and
+  the stored token gives full access to the Garmin account, not just training
+  data. Tokens are encrypted, never shown, refreshed in place, and deleted on
+  Disconnect or account deletion; set `GARMIN_TOKEN_KEY` so the key doesn't sit
+  in the same file as the tokens.
+- **Fragile by nature.** The extension and computer syncs ride Garmin's web app. When they change the
   site or tighten Cloudflare, a pull may break until you re-login. The official
   Garmin account data export (Settings → Data Management) is the
   zero-maintenance fallback that never breaks.
@@ -315,7 +366,7 @@ the same cause: users live in the same file.
   `COACH_DAILY_LIMIT` to cap it, or `SIGNUP_OPEN=0` to close the door.
 - **It's health data on the public internet.** Passwords are scrypt-hashed,
   sessions are HMAC-signed and expire, sync tokens are 32 random bytes and can
-  be replaced from the Account tab, and sign-in attempts are throttled per
+  be replaced from Settings → Data sources, and sign-in attempts are throttled per
   address. But there's no email verification and no password reset: forget a
   password and the account is gone. Nothing here has been through a security
   audit.
@@ -351,6 +402,16 @@ server/               the site
   db.py               one short-lived connection per request, always scoped
   security.py         scrypt passwords, signed sessions, per-user sync tokens
   coach.py            context building and the Anthropic calls
-  static/             the page itself (Chart.js from a CDN, no build step)
+  garmin_connect.py   direct Garmin connection: login, tokens, sync, scheduler
+  garmin_fetch.py     the fetch plan shared with the extension
+  static/             the page itself (ES modules, Chart.js from a CDN, no build step)
+    index.html        shell: sign-in gate, sidebar / bottom bar, one view at a time
+    css/              tokens.css, layout.css, components.css
+    js/main.js        boot, gate, navigation, router, status polling
+    js/core/          api, state + cache, router, ui helpers, charts, glossary
+    js/components/    Garmin connect, importers, workout builder, headline tiles
+    js/views/         today, training, insights, coaching, settings, athletes, onboarding
+extension/            the fallback browser extension
+scripts/garmin_spike.py  checks the direct connection from any machine
 data/                 garmin.db (yours), site.db (the site's), session, config
 ```

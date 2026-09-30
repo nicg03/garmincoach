@@ -15,6 +15,7 @@ from . import config
 from .store import EmailTaken, Store, normalise_email, open_store  # noqa: F401
 
 SESSION_SECRET_KEY = "session_secret"
+GARMIN_TOKEN_KEY = "garmin_token_key"
 
 
 @contextmanager
@@ -36,6 +37,17 @@ def session_secret() -> str:
 
     with store() as handle:
         return handle.ensure_setting(SESSION_SECRET_KEY, new_token)
+
+
+def garmin_token_key() -> str:
+    """The Fernet key Garmin tokens are encrypted with."""
+    if config.GARMIN_TOKEN_KEY:
+        return config.GARMIN_TOKEN_KEY
+    from cryptography.fernet import Fernet
+
+    with store() as handle:
+        return handle.ensure_setting(
+            GARMIN_TOKEN_KEY, lambda: Fernet.generate_key().decode())
 
 
 def status(user_id: int) -> dict:

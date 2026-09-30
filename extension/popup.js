@@ -10,6 +10,7 @@ const nodes = {
   setup: el("setup"),
   main: el("main"),
   siteUrl: el("site-url"),
+  detected: el("detected"),
   link: el("link"),
   sync: el("sync"),
   backfill: el("backfill"),
@@ -89,6 +90,7 @@ function render(state) {
 
   if (!linked) {
     nodes.account.textContent = "Not connected";
+    detectSite();
     return;
   }
 
@@ -108,6 +110,28 @@ function render(state) {
 
   setBusy(Boolean(state.running));
   renderStatus(state.status);
+}
+
+/**
+ * If the active tab is a Garmin Coach site, fill its address in. The site
+ * answers `/api/config` with `app: "garmincoach"` and allows any origin, so
+ * this needs no extra permission and nobody has to copy a URL.
+ */
+async function detectSite() {
+  if (nodes.siteUrl.value) return;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const origin = tab?.url ? new URL(tab.url).origin : "";
+    if (!/^https?:\/\//.test(origin)) return;
+    const response = await fetch(`${origin}/api/config`);
+    const config = response.ok ? await response.json() : null;
+    if (config?.app !== "garmincoach") return;
+    nodes.siteUrl.value = origin;
+    nodes.link.textContent = `Connect to ${new URL(origin).host}`;
+    nodes.detected.classList.remove("hidden");
+  } catch {
+    // Any other page: the address box stays empty for a manual paste.
+  }
 }
 
 async function refresh() {
@@ -149,7 +173,13 @@ nodes.link.addEventListener("click", async () => {
     showError(error.message);
   } finally {
     nodes.link.disabled = false;
-    nodes.link.textContent = "Connect";
+    let host = "";
+    try {
+      host = new URL(nodes.siteUrl.value).host;
+    } catch {
+      host = "";
+    }
+    nodes.link.textContent = host ? `Connect to ${host}` : "Connect";
   }
 });
 

@@ -2,571 +2,81 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111111">
 <title>garmincoach</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/styles.css?v=14">
+<link rel="stylesheet" href="/static/css/tokens.css?v=20">
+<link rel="stylesheet" href="/static/css/layout.css?v=20">
+<link rel="stylesheet" href="/static/css/components.css?v=20">
 </head>
 <body>
 
-<!-- Shown until a session cookie checks out. -->
-<div id="gate" class="gate">
-  <form class="gate-card" id="gate-form">
+<div id="gate" class="gate hidden">
+  <section class="gate-hero">
     <div class="brand">garmin<span>coach</span></div>
-    <p class="muted" id="gate-blurb">Training load, recovery and a coach.
-      A browser extension brings your Garmin data here.</p>
-
-    <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required>
-    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+    <h1>Your Garmin data, a training plan and a coach in one place.</h1>
+    <p>Connect Garmin once. Every morning you see how recovered you are, what today's
+      session is, and whether your fitness is going the right way.</p>
+    <ul class="gate-points">
+      <li>Training load, form, HRV and sleep against your own baseline</li>
+      <li>Race plans with paces that land on your watch</li>
+      <li>An AI coach that reads your numbers, and room for a human one</li>
+    </ul>
+  </section>
+  <form class="gate-card" id="gate-form" novalidate>
+    <div class="gate-tabs" role="tablist" id="gate-tabs">
+      <button type="button" role="tab" data-mode="login" aria-selected="true">Sign in</button>
+      <button type="button" role="tab" data-mode="signup" aria-selected="false">Create account</button>
+    </div>
+    <label for="email">Email</label>
+    <input type="email" id="email" autocomplete="email" required>
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password" required>
+    <p class="field-hint hidden" id="password-hint"></p>
     <div id="gate-role" class="role-picker hidden">
-      <p class="muted">I am a</p>
+      <p class="muted">I am</p>
       <div class="role-options">
-        <label class="role-option">
-          <input type="radio" name="gate-role" value="athlete" checked>
-          <span>Athlete</span>
-        </label>
-        <label class="role-option">
-          <input type="radio" name="gate-role" value="coach">
-          <span>Coach</span>
-        </label>
+        <label class="role-option"><input type="radio" name="gate-role" value="athlete" checked><span>An athlete</span></label>
+        <label class="role-option"><input type="radio" name="gate-role" value="coach"><span>A coach</span></label>
       </div>
     </div>
     <button class="primary" type="submit" id="gate-submit">Sign in</button>
-
-    <p class="error" id="gate-error"></p>
-    <p class="muted gate-switch">
-      <span id="gate-switch-text">New here?</span>
-      <button type="button" class="link" id="gate-switch">Create an account</button>
-    </p>
+    <p class="error" id="gate-error" role="alert"></p>
   </form>
 </div>
 
-<div id="app" class="hidden">
-  <header>
-    <div class="top">
-      <div class="brand">garmin<span>coach</span></div>
-      <nav class="tabs">
-        <button class="tab hidden" data-tab="athletes" data-role="coach">Athletes</button>
-        <button class="tab active" data-tab="dashboard">Dashboard</button>
-        <button class="tab" data-tab="plan">Plan</button>
-        <button class="tab" data-tab="workouts">Workouts</button>
-        <button class="tab" data-tab="performance">Performance</button>
-        <button class="tab" data-tab="mycoach" data-role="athlete">My coach</button>
-        <button class="tab" data-tab="coach">AI coach</button>
-        <button class="tab" data-tab="account">Account</button>
-      </nav>
-      <span class="muted" id="freshness"></span>
+<div id="shell" class="shell hidden">
+  <aside class="sidebar">
+    <a class="brand" href="#/">garmin<span>coach</span></a>
+    <nav class="nav" id="nav" aria-label="Main"></nav>
+    <div class="sidebar-foot" id="sidebar-foot"></div>
+  </aside>
+  <header class="topbar">
+    <a class="brand" href="#/">garmin<span>coach</span></a>
+    <h1 id="page-title"></h1>
+    <div class="topbar-actions">
+      <a class="pill" id="sync-pill" href="#/settings/sources">…</a>
+      <div class="menu" id="user-menu">
+        <button type="button" id="user-button" aria-haspopup="true" aria-expanded="false" aria-label="Account menu"></button>
+        <div class="menu-list hidden" id="user-list" role="menu">
+          <div class="who" id="user-who"></div>
+          <a href="#/settings/profile" role="menuitem">Settings</a>
+          <a href="#/settings/sources" role="menuitem">Data sources</a>
+          <button type="button" role="menuitem" id="btn-logout">Sign out</button>
+        </div>
+      </div>
     </div>
   </header>
-
-  <main>
-    <section id="tab-athletes" class="panel hidden">
-      <div class="card" id="coach-inbox-card">
-        <h2>Incoming requests</h2>
-        <p class="muted">Athletes find you by email and ask to connect.</p>
-        <div id="coach-inbox"></div>
-      </div>
-      <div class="card">
-        <h2>Your athletes</h2>
-        <p class="muted" id="roster-empty">No athletes yet. When you accept a request they show up here.</p>
-        <div class="roster" id="athlete-roster"></div>
-      </div>
-      <div id="athlete-detail" class="hidden">
-        <div class="card">
-          <div class="bar">
-            <h2 id="athlete-detail-name">Athlete</h2>
-            <button type="button" class="ghost" id="athlete-detail-back">Back to list</button>
-          </div>
-          <div class="cards" id="athlete-detail-stats"></div>
-          <p class="muted" id="athlete-detail-goals"></p>
-        </div>
-        <div class="card">
-          <h2>Races and goals</h2>
-          <div class="scroll"><table id="athlete-detail-races"></table></div>
-        </div>
-        <div class="card">
-          <h2>Comments and suggestions</h2>
-          <form class="composer wrap" id="coach-note-form">
-            <select id="coach-note-kind">
-              <option value="comment">Comment</option>
-              <option value="suggestion">Suggestion</option>
-            </select>
-            <input id="coach-note-text" placeholder="Write something for this athlete" required>
-            <button class="primary" type="submit">Send</button>
-          </form>
-          <div id="coach-note-list"></div>
-        </div>
-        <div class="card">
-          <h2>Assign a workout</h2>
-          <p class="muted">Queued on their plan. Their next extension sync writes it to Garmin.</p>
-          <div class="builder">
-            <input id="ca-wo-name" placeholder="Name">
-            <select id="ca-wo-sport">
-              <option value="running">Run</option>
-              <option value="cycling">Bike</option>
-              <option value="swimming">Swim</option>
-              <option value="strength">Strength</option>
-            </select>
-            <select id="ca-wo-kind">
-              <option value="easy">Easy</option>
-              <option value="long">Long</option>
-              <option value="tempo">Tempo</option>
-              <option value="interval">Interval</option>
-              <option value="strength">Strength</option>
-            </select>
-            <input id="ca-wo-mins" type="number" min="10" max="300" value="45" title="Minutes">
-            <input id="ca-wo-date" type="date">
-          </div>
-          <button class="primary" type="button" id="ca-wo-schedule">Schedule for athlete</button>
-          <p class="muted" id="ca-wo-status"></p>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-dashboard" class="panel">
-      <!-- Replaces the whole dashboard until something has been pushed. -->
-      <div class="card setup-card hidden" id="onboarding">
-        <p class="setup-kicker">First setup</p>
-        <h2>Bring your Garmin data here</h2>
-        <p class="lede">Install a small browser extension. It uses the Garmin
-          session you already have — no Python, no terminal, no extra login.
-          After that it updates on its own.</p>
-
-        <ol class="setup">
-          <li>
-            <div class="setup-head">
-              <span class="setup-num">1</span>
-              <div>
-                <strong>Add the extension to Chrome</strong>
-                <p class="muted">Download the zip, unzip it, then in Chrome open
-                  <code>chrome://extensions</code>, turn on <em>Developer mode</em>,
-                  and click <em>Load unpacked</em>. Choose the unzipped folder.</p>
-                <a class="btn-link" id="ext-download" href="/extension.zip">Download the extension →</a>
-              </div>
-            </div>
-          </li>
-          <li>
-            <div class="setup-head">
-              <span class="setup-num">2</span>
-              <div>
-                <strong>Connect it to this site</strong>
-                <p class="muted">Open Garmin Connect in a tab and sign in if
-                  asked. Click the extension icon, paste this address, then
-                  approve the connection in the tab that opens.</p>
-                <div class="cmd">
-                  <pre id="onboard-origin">…</pre>
-                  <button type="button" class="ghost copy-cmd" data-copy="onboard-origin">Copy</button>
-                </div>
-              </div>
-            </div>
-          </li>
-          <li>
-            <div class="setup-head">
-              <span class="setup-num">3</span>
-              <div>
-                <strong>Wait for the first days to land</strong>
-                <p class="muted">Keep Garmin Connect open and signed in. The
-                  last month arrives in about a minute, and this page fills
-                  in by itself. After that the extension refreshes every few
-                  hours — or click <em>Sync now</em> on the extension icon.</p>
-              </div>
-            </div>
-          </li>
-        </ol>
-
-        <div class="or-rule"><span>or load years of history at once</span></div>
-        <div class="dropzone" id="onboard-drop" tabindex="0">
-          <strong>Drop Garmin’s official export here</strong>
-          <p class="muted">On Garmin: Account → Data Management → Export Your Data.
-            When the zip arrives, drop it on this box. Nothing to install.</p>
-          <input type="file" id="onboard-file" accept=".zip,application/zip" hidden>
-          <button type="button" class="ghost" id="onboard-browse">Choose a zip</button>
-          <p class="muted" id="onboard-import-status"></p>
-        </div>
-
-        <p class="setup-foot muted" id="onboard-account"></p>
-        <p class="setup-foot muted" id="onboard-wait">Waiting for Garmin data… keep this tab open.</p>
-        <p class="setup-foot muted">When this page shows charts, you’re done.</p>
-      </div>
-
-      <div id="dashboard-body">
-        <div class="ranges">
-          <button class="chip" data-range="30">30 days</button>
-          <button class="chip active" data-range="90">90 days</button>
-          <button class="chip" data-range="365">1 year</button>
-          <button class="chip" data-range="all">All</button>
-        </div>
-        <div class="history-banner hidden" id="history-banner"></div>
-
-        <div class="cards" id="headline"></div>
-        <div class="explain-grid">
-          <article>
-            <h3>Form (TSB)</h3>
-            <p>CTL minus ATL. Positive means you're fresh; negative means
-              fatigue is ahead of fitness. A dip to −10/−20 in a build is
-              normal. If it stays under −20 and HRV is also down, ease off.</p>
-          </article>
-          <article>
-            <h3>CTL / ATL / load ratio</h3>
-            <p>CTL is ~42-day fitness, ATL ~7-day fatigue. The load ratio is
-              ATL/CTL (ACWR). About 0.8–1.3 is productive. Above 1.5 is where
-              niggles cluster. We cap planned weeks at 1.25.</p>
-          </article>
-          <article>
-            <h3>HRV and resting HR</h3>
-            <p>Only the gap to <em>your</em> baseline matters. HRV down and
-              resting HR up for two or three mornings is the real signal.
-              One odd night is noise.</p>
-          </article>
-          <article>
-            <h3>Sleep score</h3>
-            <p>Garmin's 0–100 blend of duration and stages. Use it with HRV,
-              not instead of it. A short night before a quality day is a
-              reason to swap, not to hero through intervals.</p>
-          </article>
-        </div>
-
-        <div class="card">
-          <h2>Load and form</h2>
-          <p class="muted">Bars are each day's training load. ATL is the last week
-            of fatigue, CTL the last six weeks of fitness, and form is what's left
-            over: below zero you're accumulating, above zero you're fresh.</p>
-          <div class="chart tall"><canvas id="chart-load"></canvas></div>
-        </div>
-
-        <div class="card">
-          <h2>Recovery</h2>
-          <p class="muted">Each line against its own trailing baseline, because
-            the absolute numbers only mean something relative to your normal.</p>
-          <div class="chart"><canvas id="chart-recovery"></canvas></div>
-        </div>
-
-        <div class="card">
-          <h2>Sleep</h2>
-          <p class="muted">Stacked bars are hours in deep, light and REM.
-            The line is Garmin’s sleep score. Consecutive low scores with
-            rising resting HR are a better rest cue than one short night.</p>
-          <div class="chart"><canvas id="chart-sleep"></canvas></div>
-        </div>
-
-        <div class="card">
-          <h2>Weekly volume</h2>
-          <p class="muted">Hours by sport, plus weekly load. Ramp more than
-            about 8% week to week and the next block gets harder than it
-            looks on paper.</p>
-          <div class="chart"><canvas id="chart-weeks"></canvas></div>
-        </div>
-
-        <div class="card">
-          <h2>Yesterday's load against this morning's HRV</h2>
-          <p class="muted">One point per day. A cloud drifting down to the right
-            means the hard days are costing you more than they're giving.</p>
-          <div class="chart"><canvas id="chart-scatter"></canvas></div>
-        </div>
-
-        <div class="card">
-          <h2>Recent activities</h2>
-          <div class="scroll"><table id="activities"></table></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-plan" class="panel hidden">
-      <div class="card" id="decide-card">
-        <div class="bar">
-          <h2>Today</h2>
-          <div class="row-actions" id="decide-actions"></div>
-        </div>
-        <p class="muted" id="decide-text">No session planned for today.</p>
-      </div>
-      <div class="card">
-        <div class="bar">
-          <h2>Races</h2>
-        </div>
-        <form class="composer wrap" id="race-form">
-          <input id="race-name" placeholder="Race name" required>
-          <input id="race-date" type="date" required>
-          <select id="race-distance">
-            <option value="5000">5k</option>
-            <option value="10000">10k</option>
-            <option value="21097" selected>Half</option>
-            <option value="42195">Marathon</option>
-          </select>
-          <input id="race-goal" placeholder="Goal 1:45:00">
-          <select id="race-priority">
-            <option value="A" selected>A-race</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
-          </select>
-          <button class="primary" type="submit">Add race</button>
-        </form>
-        <div class="scroll"><table id="race-table"></table></div>
-        <div id="race-review" class="muted"></div>
-      </div>
-      <div class="card">
-        <div class="bar">
-          <h2>Training plan</h2>
-          <button class="ghost" id="btn-activate" type="button">Send to watch</button>
-        </div>
-        <form class="composer wrap" id="plan-form">
-          <select id="plan-race"></select>
-          <input id="plan-notes" placeholder="Constraints: Tue off, max 5 days…">
-          <button class="primary" type="submit">Generate plan</button>
-        </form>
-        <p class="muted" id="plan-rationale"></p>
-        <div class="cards" id="plan-headline"></div>
-        <div class="pace-board" id="pace-board"></div>
-        <p class="muted" id="pace-source"></p>
-        <div id="pace-insights" class="pace-insights hidden"></div>
-        <div class="chart"><canvas id="chart-projected"></canvas></div>
-        <p class="muted" id="plan-adherence"></p>
-        <div id="plan-weeks"></div>
-        <div class="session-sheet hidden" id="session-sheet"></div>
-      </div>
-    </section>
-
-    <section id="tab-workouts" class="panel hidden">
-      <div class="card">
-        <h2>Build a workout</h2>
-        <p class="muted">Structured session in our format. Preview checks it;
-          Schedule queues it for the next extension sync, which writes it to
-          Garmin and your watch.</p>
-        <div class="builder">
-          <input id="wo-name" placeholder="Name">
-          <select id="wo-sport">
-            <option value="running">Run</option>
-            <option value="cycling">Bike</option>
-            <option value="swimming">Swim</option>
-            <option value="strength">Strength</option>
-          </select>
-          <select id="wo-kind">
-            <option value="easy">Easy</option>
-            <option value="long">Long</option>
-            <option value="tempo">Tempo</option>
-            <option value="interval">Interval</option>
-            <option value="strength">Strength</option>
-            <option value="bike">Bike</option>
-            <option value="swim">Swim</option>
-          </select>
-        </div>
-        <div id="wo-steps"></div>
-        <button class="ghost" type="button" id="wo-add-step">Add step</button>
-        <button class="ghost" type="button" id="wo-add-repeat">Add repeat</button>
-        <div class="composer wrap">
-          <input id="wo-date" type="date">
-          <button class="primary" type="button" id="wo-preview">Preview</button>
-          <button class="primary" type="button" id="wo-schedule">Schedule</button>
-          <button class="ghost" type="button" id="wo-save">Save to library</button>
-        </div>
-        <pre class="cmd-out" id="wo-preview-out"></pre>
-      </div>
-      <div class="card">
-        <h2>Library</h2>
-        <div class="scroll"><table id="wo-library"></table></div>
-      </div>
-    </section>
-
-    <section id="tab-performance" class="panel hidden">
-      <div class="cards" id="perf-headline"></div>
-      <div class="explain-grid">
-        <article>
-          <h3>VDOT</h3>
-          <p>Jack Daniels’ index of current race fitness, from your best
-            recent 5k–half. Training paces (E/M/T/I/R) are percentages of
-            this number, not of the time you wish you could run.</p>
-        </article>
-        <article>
-          <h3>80/20</h3>
-          <p>Share of running time in HR zones 1–2 vs 3–5 over six weeks.
-            Polarised training sits near 80% easy. If hard is winning, the
-            easy days are not easy enough.</p>
-        </article>
-        <article>
-          <h3>Foster monotony</h3>
-          <p>Mean daily load divided by its standard deviation over 7 days.
-            Above ~2 the week is too samey — strain (monotony × total load)
-            climbs even if no single day looks huge.</p>
-        </article>
-        <article>
-          <h3>Decoupling</h3>
-          <p>How much second-half pace fades vs the first at similar HR.
-            Aerobic decoupling over ~5% on a long run means the duration
-            outran your current endurance.</p>
-        </article>
-      </div>
-      <div class="card">
-        <h2>Personal records</h2>
-        <div class="scroll"><table id="perf-records"></table></div>
-      </div>
-      <div class="card">
-        <h2>Pace curve</h2>
-        <p class="muted">Best pace at each standard mark.</p>
-        <div class="chart"><canvas id="chart-curve"></canvas></div>
-      </div>
-      <div class="card">
-        <h2>Race predictions</h2>
-        <p class="muted">VDOT / Daniels, Riegel from your nearest PR, and
-          Garmin’s own prediction when we have it.</p>
-        <div class="scroll"><table id="perf-pred"></table></div>
-      </div>
-      <div class="card">
-        <h2>Training paces</h2>
-        <p class="muted">Daniels zones in min/km. Easy is a range (59–74%
-          VO2). T, I and R are narrow bands around the table values. The
-          planner stamps these onto every structured workout.</p>
-        <div class="rows" id="perf-paces"></div>
-      </div>
-      <div class="card">
-        <h2>Aerobic efficiency</h2>
-        <p class="muted">Heart rate at easy pace over time. Down and to the
-          right is getting fitter, not just running more.</p>
-        <div class="chart"><canvas id="chart-efficiency"></canvas></div>
-        <div class="scroll"><table id="perf-decouple"></table></div>
-      </div>
-    </section>
-
-    <section id="tab-mycoach" class="panel hidden">
-      <div class="card">
-        <h2>Find a coach</h2>
-        <p class="muted">Search by the email they used to sign up. They have to accept before they can see your data.</p>
-        <form class="composer wrap" id="coach-lookup-form">
-          <input type="email" id="coach-lookup-email" placeholder="coach@example.com" required>
-          <button class="primary" type="submit">Look up</button>
-        </form>
-        <p class="muted" id="coach-lookup-status"></p>
-      </div>
-      <div class="card">
-        <h2>Your coaches</h2>
-        <div id="mycoach-links"></div>
-      </div>
-      <div class="card">
-        <h2>From your coach</h2>
-        <div id="mycoach-notes"></div>
-      </div>
-    </section>
-
-    <section id="tab-coach" class="panel hidden">
-      <div class="card hidden" id="coach-off">
-        <h2>The AI coach is off</h2>
-        <p class="muted">Whoever runs this site hasn't set an
-          <code>OPENAI_API_KEY</code> (or <code>ANTHROPIC_API_KEY</code>),
-          so there's nothing to ask yet.</p>
-      </div>
-
-      <div id="coach-body">
-        <div class="card">
-          <div class="bar">
-            <h2>Today's briefing</h2>
-            <button class="ghost" id="btn-rebrief">Regenerate</button>
-          </div>
-          <div class="prose" id="brief">Loading…</div>
-        </div>
-
-        <div class="card chat-card">
-          <h2>Ask about your training</h2>
-          <div class="chat" id="chat"></div>
-          <form class="composer" id="chat-form">
-            <textarea id="question" rows="2" placeholder="Is my recovery keeping up with this block?"></textarea>
-            <button class="primary" type="submit" id="btn-ask">Ask</button>
-          </form>
-          <div class="suggestions" id="suggestions"></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-account" class="panel hidden">
-      <div class="card">
-        <h2>Your account</h2>
-        <div class="rows" id="account-rows"></div>
-      </div>
-
-      <div class="card">
-        <h2>Athlete</h2>
-        <p class="muted">The planner uses this: days you can train, and HR if
-          you know it. Leave a day at 0 minutes to keep it off.</p>
-        <form id="athlete-form">
-          <div class="builder" id="ath-days"></div>
-          <div class="composer wrap">
-            <input id="ath-hr-max" type="number" min="120" max="220" placeholder="HR max">
-            <input id="ath-hr-rest" type="number" min="30" max="100" placeholder="Resting HR">
-            <input id="ath-weight" type="number" min="30" max="200" step="0.1" placeholder="Weight kg">
-            <button class="primary" type="submit">Save athlete</button>
-          </div>
-          <p class="muted" id="ath-saved"></p>
-        </form>
-      </div>
-
-      <div class="card setup-card">
-        <p class="setup-kicker">How data arrives</p>
-        <h2>Browser extension</h2>
-        <p class="lede">The usual way. It reads Garmin in the tab you’re
-          already signed into, and publishes here. No Python.</p>
-        <p class="muted">Site address to paste into the extension:</p>
-        <div class="cmd">
-          <pre id="account-origin">…</pre>
-          <button type="button" class="ghost copy-cmd" data-copy="account-origin">Copy</button>
-        </div>
-        <p><a class="btn-link" id="ext-download-account" href="/extension.zip">Download the extension →</a></p>
-
-        <h2 class="tight">Official Garmin export</h2>
-        <p class="muted">For years of history, or if you don’t want an
-          extension. Request an export from Garmin, then drop the zip here.</p>
-        <div class="dropzone" id="account-drop" tabindex="0">
-          <strong>Drop the export zip here</strong>
-          <p class="muted">Account → Data Management → Export Your Data on Garmin.</p>
-          <input type="file" id="account-file" accept=".zip,application/zip" hidden>
-          <button type="button" class="ghost" id="account-browse">Choose a zip</button>
-          <p class="muted" id="account-import-status"></p>
-        </div>
-
-        <details class="advanced">
-          <summary>Advanced: computer sync and raw token</summary>
-          <p class="muted">The original Python tool still works if you want
-            a headless machine to push data.
-            <a id="repo-link-account" href="#" target="_blank" rel="noreferrer">Get the project</a>,
-            then run this once:</p>
-          <div class="cmd">
-            <pre id="account-command">…</pre>
-            <button type="button" class="ghost copy-cmd" data-copy="account-command">Copy</button>
-          </div>
-          <p class="muted">Anyone with this string can write into your history.</p>
-          <div class="token-row">
-            <code id="token" class="token">…</code>
-            <button class="ghost" id="btn-copy-token">Copy</button>
-          </div>
-          <button class="ghost" id="btn-rotate">Replace with a new token</button>
-          <p class="muted" id="rotate-note"></p>
-        </details>
-      </div>
-
-      <div class="card">
-        <h2>Data</h2>
-        <div class="rows" id="status-rows"></div>
-      </div>
-
-      <div class="card">
-        <button class="ghost" id="btn-logout">Sign out</button>
-      </div>
-
-      <div class="card danger">
-        <h2>Delete everything</h2>
-        <p class="muted">Removes your account and every activity and day stored
-          here. The data on your own computer is untouched. This can't be
-          undone.</p>
-        <div class="composer">
-          <input type="email" id="delete-confirm" placeholder="Type your email to confirm">
-          <button class="ghost danger-button" id="btn-delete">Delete</button>
-        </div>
-        <p class="error" id="delete-error"></p>
-      </div>
-    </section>
-  </main>
+  <main id="main"><div class="page" id="view"></div></main>
+  <nav class="bottombar" id="bottombar" aria-label="Main"></nav>
 </div>
 
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=12"></script>
+<script type="module" src="/static/js/main.js?v=20"></script>
 </body>
 </html>

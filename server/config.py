@@ -58,6 +58,13 @@ COACH_DAILY_LIMIT = int(os.environ.get("COACH_DAILY_LIMIT", "0"))
 DEFAULT_WINDOW_DAYS = int(os.environ.get("DEFAULT_WINDOW_DAYS", "90"))
 COACH_DETAIL_DAYS = int(os.environ.get("COACH_DETAIL_DAYS", "90"))
 
+# Direct Garmin connection. The key encrypts stored Garmin tokens; without it
+# one is generated and kept in the database, which protects a copied token
+# column but not a copied database file.
+GARMIN_TOKEN_KEY = os.environ.get("GARMIN_TOKEN_KEY", "")
+GARMIN_SYNC_HOURS = float(os.environ.get("GARMIN_SYNC_HOURS", "4"))
+GARMIN_SCHEDULER = os.environ.get("GARMIN_SCHEDULER", "1") != "0"
+
 # Shown to new users so they know where to get the sync tool.
 SYNC_REPO_URL = os.environ.get(
     "SYNC_REPO_URL", "https://github.com/nicg03/garmincoach")

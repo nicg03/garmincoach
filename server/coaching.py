@@ -208,6 +208,10 @@ def _athlete_card(athlete: dict) -> dict:
         "atl": headline.get("atl"),
         "week_km": headline.get("week_km"),
         "hrv": headline.get("hrv"),
+        "acwr": headline.get("acwr"),
+        "hrv_delta": headline.get("hrv_delta"),
+        "resting_hr_delta": headline.get("resting_hr_delta"),
+        "sleep_score": headline.get("sleep_score"),
         "next_race": upcoming[0] if upcoming else None,
         "goals": profile.get("notes") or "",
         "last_activity": {

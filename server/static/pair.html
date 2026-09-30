@@ -3,15 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>Connect — garmincoach</title>
+  <title>Connect — garmincoach</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=5">
+  <link rel="stylesheet" href="/static/css/tokens.css?v=20">
+  <link rel="stylesheet" href="/static/css/layout.css?v=20">
+  <link rel="stylesheet" href="/static/css/components.css?v=20">
 </head>
 <body>
-  <div class="gate">
-    <div class="gate-card card" id="panel">
+  <div class="gate single">
+    <div class="gate-card" id="panel">
       <div class="brand">garmin<span>coach</span></div>
       <p class="muted" id="subtitle">Checking…</p>
       <div id="body"></div>
@@ -103,7 +105,7 @@ async function ready() {
     try {
       await post('/api/pair/approve', { user_code: code });
       show(`<p><strong>Connected.</strong> The extension is publishing your
-            Garmin data. This tab will open the dashboard in a moment.</p>
+            Garmin data. You can close this tab.</p>
             <p><a class="btn-link" href="/">Open the dashboard →</a></p>`,
            'Done');
     } catch (e) {

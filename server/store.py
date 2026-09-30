@@ -156,6 +156,17 @@ CREATE TABLE IF NOT EXISTS coach_notes (
     created     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS coach_notes_athlete ON coach_notes(athlete_id, created);
+CREATE TABLE IF NOT EXISTS garmin_accounts (
+    user_id       INTEGER PRIMARY KEY,
+    garmin_email  TEXT NOT NULL,
+    tokens        TEXT NOT NULL,
+    created       TEXT NOT NULL,
+    last_sync     REAL,
+    last_result   TEXT,
+    last_error    TEXT,
+    needs_login   INTEGER NOT NULL DEFAULT 0,
+    backfill      TEXT
+);
 """
 
 VALID_ROLES = frozenset({"athlete", "coach"})
@@ -272,7 +283,8 @@ class Store:
     def delete_user(self, user_id: int) -> None:
         for table in ("activities", "days", "garmin_meta", "briefings",
                       "coach_usage", "pairings", "athlete", "races", "plans",
-                      "plan_sessions", "workout_templates", "decisions"):
+                      "plan_sessions", "workout_templates", "decisions",
+                      "garmin_accounts"):
             self.conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         self.conn.execute(
             "DELETE FROM coaching_links WHERE athlete_id = ? OR coach_id = ?",
@@ -635,6 +647,58 @@ class Store:
             (user_id, day, json.dumps(payload)))
         self.commit()
         return payload
+
+    # ---- direct Garmin connection ------------------------------------------
+    def garmin_account(self, user_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM garmin_accounts WHERE user_id = ?", (user_id,)).fetchone()
+        if not row:
+            return None
+        account = dict(row)
+        for key in ("last_result", "backfill"):
+            try:
+                account[key] = json.loads(account[key]) if account[key] else None
+            except json.JSONDecodeError:
+                account[key] = None
+        return account
+
+    def save_garmin_account(self, user_id: int, garmin_email: str,
+                            tokens: str) -> None:
+        """A fresh connection: new tokens, errors and history cursor reset."""
+        self.conn.execute(
+            "INSERT INTO garmin_accounts (user_id, garmin_email, tokens, created) "
+            "VALUES (?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET "
+            "garmin_email=excluded.garmin_email, tokens=excluded.tokens, "
+            "needs_login=0, last_error=NULL",
+            (user_id, garmin_email, tokens, date.today().isoformat()))
+        self.commit()
+
+    def update_garmin_account(self, user_id: int, **fields) -> None:
+        allowed = {"tokens", "last_sync", "last_result", "last_error",
+                   "needs_login", "backfill"}
+        sets, params = [], []
+        for key, value in fields.items():
+            if key not in allowed:
+                raise ValueError(f"Unknown garmin_accounts field: {key}")
+            if key in ("last_result", "backfill") and value is not None:
+                value = json.dumps(value)
+            sets.append(f"{key} = ?")
+            params.append(value)
+        if not sets:
+            return
+        self.conn.execute(
+            f"UPDATE garmin_accounts SET {', '.join(sets)} WHERE user_id = ?",
+            (*params, user_id))
+        self.commit()
+
+    def delete_garmin_account(self, user_id: int) -> None:
+        self.conn.execute("DELETE FROM garmin_accounts WHERE user_id = ?", (user_id,))
+        self.commit()
+
+    def garmin_connected_users(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT user_id, last_sync, needs_login FROM garmin_accounts")
+        return [dict(r) for r in rows]
 
     # ---- human coach / athlete links ---------------------------------------
     def _link_from_row(self, row) -> dict | None:
