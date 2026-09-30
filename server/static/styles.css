@@ -674,3 +674,55 @@ table .ghost { padding: 4px 10px; font-size: 12px; }
   font-size: 13px;
 }
 .session-sheet .row-actions { margin-top: 10px; }
+
+.role-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.role-picker label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+
+.roster {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.roster-card {
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  cursor: pointer;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+}
+.roster-card:hover { border-color: var(--accent); }
+.roster-card strong { display: block; margin-bottom: 4px; }
+.roster-card .meta { font-size: 13px; color: var(--muted); }
+
+.inbox-row, .note-row, .link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px 7px;
+  border-radius: 99px;
+}
+.day-cell .badge { margin-top: 4px; }

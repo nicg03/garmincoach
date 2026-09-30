@@ -92,6 +92,7 @@ function setMode(mode) {
   $('#gate-blurb').textContent = signup
     ? `Pick a password of at least ${state.site.min_password || 8} characters.`
     : 'Your training data, brought over by a browser extension.';
+  $('#gate-role').classList.toggle('hidden', !signup);
   $('#gate-error').textContent = '';
 }
 
@@ -105,10 +106,15 @@ $('#gate-form').addEventListener('submit', async (event) => {
   $('#gate-submit').disabled = true;
   try {
     const path = state.mode === 'signup' ? '/api/signup' : '/api/login';
+    const payload = { email: $('#email').value, password: $('#password').value };
+    if (state.mode === 'signup') {
+      const picked = document.querySelector('input[name="gate-role"]:checked');
+      payload.role = (picked && picked.value) || 'athlete';
+    }
     const response = await fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: $('#email').value, password: $('#password').value }),
+      body: JSON.stringify(payload),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -128,18 +134,35 @@ $('#btn-logout').addEventListener('click', async () => {
 });
 
 // ---- tabs and range ---------------------------------------------------------
-$$('.tab').forEach((tab) => tab.addEventListener('click', () => {
-  $$('.tab').forEach((t) => t.classList.toggle('active', t === tab));
+function switchToTab(name) {
+  $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name && !t.classList.contains('hidden')));
   $$('.panel').forEach((panel) => {
-    panel.classList.toggle('hidden', panel.id !== 'tab-' + tab.dataset.tab);
+    panel.classList.toggle('hidden', panel.id !== 'tab-' + name);
   });
-  if (tab.dataset.tab === 'coach' && state.status.coach && !$('#brief').dataset.loaded) {
+  if (name === 'dashboard' && state.status && (state.status.days || state.status.activities)) {
+    loadDashboard().catch(() => {});
+  }
+  if (name === 'coach' && state.status.coach && !$('#brief').dataset.loaded) {
     loadBrief();
   }
-  if (tab.dataset.tab === 'plan') loadPlanTab();
-  if (tab.dataset.tab === 'workouts') loadWorkouts();
-  if (tab.dataset.tab === 'performance') loadPerformance();
-  if (tab.dataset.tab === 'account') loadAthlete();
+  if (name === 'plan') loadPlanTab();
+  if (name === 'workouts') loadWorkouts();
+  if (name === 'performance') loadPerformance();
+  if (name === 'account') loadAthlete();
+  if (name === 'athletes') loadCoachHome();
+  if (name === 'mycoach') loadMyCoach();
+}
+
+function applyRoleNav() {
+  const role = (state.status.user && state.status.user.role) || 'athlete';
+  $$('nav .tab[data-role]').forEach((t) => {
+    t.classList.toggle('hidden', t.dataset.role !== role);
+  });
+}
+
+$$('.tab').forEach((tab) => tab.addEventListener('click', () => {
+  if (tab.classList.contains('hidden')) return;
+  switchToTab(tab.dataset.tab);
 }));
 
 $$('.chip').forEach((chip) => chip.addEventListener('click', () => {
@@ -476,6 +499,7 @@ function renderAccount(status) {
   const user = status.user || {};
   const rows = [
     ['Email', escapeHtml(user.email || '')],
+    ['Role', escapeHtml(user.role || 'athlete')],
     ['Member since', user.since || ''],
   ];
   if (status.coach_limit) {
@@ -720,10 +744,12 @@ function renderDecision(decision) {
   }
   const wo = decision.session && decision.session.workout;
   const name = wo && wo.name || (decision.session && decision.session.kind) || 'No session';
+  const fromCoach = decision.session && decision.session.assigned_by
+    ? ' From your coach.' : '';
   const applied = decision.applied ? ` Applied: ${decision.applied}.` : '';
   const desc = (decision.session && (decision.session.description || (wo && wo.description))) || '';
   $('#decide-text').textContent =
-    `${name}: ${decision.reason} Suggested: ${decision.action}.${applied}` +
+    `${name}:${fromCoach} ${decision.reason} Suggested: ${decision.action}.${applied}` +
     (desc ? ` ${desc}` : '');
   $('#decide-actions').innerHTML = ['keep', 'ease', 'swap', 'rest'].map((a) =>
     `<button type="button" class="ghost" data-act="${a}">${a}</button>`).join('');
@@ -991,6 +1017,7 @@ function renderWeekCalendar(plan) {
         <span class="dow">${label} ${s.date.slice(8)}</span>
         <span class="nm">${escapeHtml(wo.name || sessionKind(s))}</span>
         <span class="meta">${escapeHtml([km, pace, s.phase].filter(Boolean).join(' · '))}</span>
+        ${s.assigned_by ? '<span class="badge">from coach</span>' : ''}
       </button>`;
     }).join('');
     return `<div class="week-block">
@@ -1042,7 +1069,8 @@ function showSessionSheet(session) {
   const steps = stepRows(wo.steps || []).join('');
   host.classList.remove('hidden');
   host.innerHTML = `
-    <h3>${escapeHtml(wo.name || sessionKind(session))}</h3>
+    <h3>${escapeHtml(wo.name || sessionKind(session))}
+      ${session.assigned_by ? '<span class="badge">from your coach</span>' : ''}</h3>
     <p class="purpose muted">${escapeHtml(session.purpose || wo.purpose || '')}</p>
     <p>${escapeHtml(session.description || wo.description || '')}</p>
     ${session.completed_pace ? `<p class="muted">Done: ${escapeHtml(session.completed_pace)} vs ${escapeHtml(session.target_pace || 'target')} (${escapeHtml(paceStatusLabel(session.pace_status))})</p>` : ''}
@@ -1516,6 +1544,174 @@ function startEmptyPoll() {
   }, 2500);
 }
 
+function userRole() {
+  return (state.status.user && state.status.user.role) || 'athlete';
+}
+
+async function loadCoachHome() {
+  if (userRole() !== 'coach') return;
+  const [inbox, roster] = await Promise.all([
+    api('/api/coaching/inbox'),
+    api('/api/coaching/athletes'),
+  ]);
+  const requests = inbox.requests || [];
+  $('#coach-inbox').innerHTML = requests.length
+    ? requests.map((r) => `<div class="inbox-row">
+        <span>${escapeHtml(r.athlete_email)}</span>
+        <span>
+          <button type="button" class="primary" data-accept="${r.id}">Accept</button>
+          <button type="button" class="ghost" data-reject="${r.id}">Decline</button>
+        </span>
+      </div>`).join('')
+    : '<p class="muted">No pending requests.</p>';
+  $$('#coach-inbox [data-accept]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await post('/api/coaching/' + btn.dataset.accept + '/accept');
+      loadCoachHome();
+    });
+  });
+  $$('#coach-inbox [data-reject]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await post('/api/coaching/' + btn.dataset.reject + '/reject');
+      loadCoachHome();
+    });
+  });
+  const athletes = roster.athletes || [];
+  $('#roster-empty').classList.toggle('hidden', athletes.length > 0);
+  $('#athlete-roster').innerHTML = athletes.map((a) => {
+    const race = a.next_race ? `${escapeHtml(a.next_race.name)} (${a.next_race.date})` : 'No upcoming race';
+    const last = a.last_activity
+      ? (a.last_activity.type || 'activity') + ' ' + shortDate((a.last_activity.start || '').slice(0, 10))
+      : 'no recent activity';
+    return `<button type="button" class="roster-card" data-aid="${a.id}">
+      <strong>${escapeHtml(a.email)}</strong>
+      <div class="meta">CTL ${fmt(a.ctl)} · form ${fmt(a.form, 1)}</div>
+      <div class="meta">${escapeHtml(last)}</div>
+      <div class="meta">${race}</div>
+    </button>`;
+  }).join('');
+  $$('#athlete-roster [data-aid]').forEach((btn) => {
+    btn.addEventListener('click', () => openAthleteDetail(Number(btn.dataset.aid)));
+  });
+}
+
+async function openAthleteDetail(athleteId) {
+  state.selectedAthlete = athleteId;
+  const body = await api('/api/coaching/athletes/' + athleteId);
+  $('#athlete-detail').classList.remove('hidden');
+  $('#athlete-detail-name').textContent = body.email || 'Athlete';
+  $('#athlete-detail-stats').innerHTML = [
+    tile('CTL', fmt(body.ctl), ''),
+    tile('Form', fmt(body.form, 1), ''),
+    tile('ATL', fmt(body.atl), ''),
+    tile('Week km', fmt(body.week_km, 1), ''),
+    tile('HRV', fmt(body.hrv), ''),
+  ].join('');
+  const goals = (body.profile && body.profile.notes) || body.goals || '';
+  $('#athlete-detail-goals').textContent = goals
+    ? 'Notes: ' + goals
+    : (body.last ? `Last Garmin day ${body.last}` : 'No Garmin data yet.');
+  const races = body.races || [];
+  $('#athlete-detail-races').innerHTML =
+    '<thead><tr><th>Date</th><th>Name</th><th>Pri</th><th>Goal</th></tr></thead><tbody>' +
+    (races.map((r) => `<tr>
+      <td>${escapeHtml(r.date || '')}</td>
+      <td>${escapeHtml(r.name || '')}</td>
+      <td>${escapeHtml(r.priority || '')}</td>
+      <td>${escapeHtml(r.goal_time || '')}</td>
+    </tr>`).join('') || '<tr><td colspan="4">No races.</td></tr>') +
+    '</tbody>';
+  renderCoachNotes(body.notes || []);
+  if (!$('#ca-wo-date').value) $('#ca-wo-date').value = new Date().toISOString().slice(0, 10);
+  $('#athlete-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderCoachNotes(notes) {
+  $('#coach-note-list').innerHTML = (notes || []).length
+    ? notes.map((n) => `<div class="note-row">
+        <div><span class="badge">${escapeHtml(n.kind)}</span>
+        ${escapeHtml(n.created)} — ${escapeHtml(n.text)}</div>
+      </div>`).join('')
+    : '<p class="muted">No comments yet.</p>';
+}
+
+$('#athlete-detail-back').addEventListener('click', () => {
+  $('#athlete-detail').classList.add('hidden');
+  state.selectedAthlete = null;
+});
+
+$('#coach-note-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!state.selectedAthlete) return;
+  await post('/api/coaching/athletes/' + state.selectedAthlete + '/notes', {
+    kind: $('#coach-note-kind').value,
+    text: $('#coach-note-text').value,
+  });
+  $('#coach-note-text').value = '';
+  const body = await api('/api/coaching/athletes/' + state.selectedAthlete + '/notes');
+  renderCoachNotes(body.notes || []);
+});
+
+$('#ca-wo-schedule').addEventListener('click', async () => {
+  if (!state.selectedAthlete) return;
+  const mins = Number($('#ca-wo-mins').value) || 45;
+  const workout = {
+    name: $('#ca-wo-name').value || 'Coach session',
+    sport: $('#ca-wo-sport').value,
+    kind: $('#ca-wo-kind').value,
+    steps: [{
+      kind: 'step',
+      intensity: $('#ca-wo-kind').value === 'interval' ? 'interval' : 'active',
+      duration: { type: 'time', value: mins, unit: 'min' },
+      target: { type: 'hr_zone', zone: $('#ca-wo-kind').value === 'easy' ? 2 : 4 },
+    }],
+  };
+  try {
+    const body = await post('/api/workout/schedule', {
+      ...workout,
+      date: $('#ca-wo-date').value,
+      athlete_id: state.selectedAthlete,
+    });
+    $('#ca-wo-status').textContent = 'Queued for ' + (body.session && body.session.date);
+  } catch (error) {
+    $('#ca-wo-status').textContent = error.message;
+  }
+});
+
+async function loadMyCoach() {
+  if (userRole() !== 'athlete') return;
+  const mine = await api('/api/coaching/mine');
+  const links = mine.links || [];
+  $('#mycoach-links').innerHTML = links.length
+    ? links.map((l) => `<div class="link-row">
+        <span>${escapeHtml(l.coach_email)}</span>
+        <span class="badge">${escapeHtml(l.status)}</span>
+      </div>`).join('')
+    : '<p class="muted">You have not connected a coach yet.</p>';
+  const notes = mine.notes || [];
+  $('#mycoach-notes').innerHTML = notes.length
+    ? notes.map((n) => `<div class="note-row">
+        <div><span class="badge">${escapeHtml(n.kind)}</span>
+        ${escapeHtml(n.coach_email)} · ${escapeHtml(n.created)}</div>
+        <div>${escapeHtml(n.text)}</div>
+      </div>`).join('')
+    : '<p class="muted">Nothing from a coach yet.</p>';
+}
+
+$('#coach-lookup-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const status = $('#coach-lookup-status');
+  status.textContent = '';
+  try {
+    const found = await api('/api/coaches/lookup?email=' + encodeURIComponent($('#coach-lookup-email').value));
+    await post('/api/coaching/request', { coach_id: found.id });
+    status.textContent = 'Request sent to ' + found.email + '. Waiting for them to accept.';
+    loadMyCoach();
+  } catch (error) {
+    status.textContent = error.message;
+  }
+});
+
 async function boot() {
   state.site = await fetch('/api/config').then((r) => r.json()).catch(() => ({}));
   setMode(state.mode);
@@ -1541,6 +1737,7 @@ async function boot() {
   renderAccount(status);
   updateHistoryBanner(status);
   loadAthlete().catch(() => {});
+  applyRoleNav();
 
   if (window.Chart) {
     Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
@@ -1549,6 +1746,7 @@ async function boot() {
 
   // Nothing pushed yet: the charts would be empty, so explain what to do.
   const empty = !status.days && !status.activities;
+  const role = (status.user && status.user.role) || 'athlete';
   $('#onboarding').classList.toggle('hidden', !empty);
   $('#dashboard-body').classList.toggle('hidden', empty);
   const who = $('#onboard-account');
@@ -1570,15 +1768,22 @@ async function boot() {
   $('#coach-off').classList.toggle('hidden', !!status.coach);
   $('#coach-body').classList.toggle('hidden', !status.coach);
 
+  if (role === 'coach') {
+    switchToTab('athletes');
+  }
+
   if (empty) {
     startEmptyPoll();
+    if (role !== 'coach') return;
     return;
   }
   stopEmptyPoll();
   watchIncomingHistory();
-  loadDashboard().catch((error) => {
-    $('#headline').innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
-  });
+  if (role !== 'coach') {
+    loadDashboard().catch((error) => {
+      $('#headline').innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
+    });
+  }
 }
 
 bindDropzone($('#onboard-drop'), $('#onboard-file'),

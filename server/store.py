@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS users (
     email       TEXT NOT NULL UNIQUE,
     password    TEXT NOT NULL,
     sync_token  TEXT NOT NULL UNIQUE,
-    created     TEXT NOT NULL
+    created     TEXT NOT NULL,
+    role        TEXT NOT NULL DEFAULT 'athlete'
 );
 CREATE TABLE IF NOT EXISTS activities (
     user_id  INTEGER NOT NULL,
@@ -135,7 +136,31 @@ CREATE TABLE IF NOT EXISTS decisions (
     payload  TEXT NOT NULL,
     PRIMARY KEY (user_id, date)
 );
+CREATE TABLE IF NOT EXISTS coaching_links (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id  INTEGER NOT NULL,
+    coach_id    INTEGER NOT NULL,
+    status      TEXT NOT NULL,
+    created     TEXT NOT NULL,
+    updated     TEXT NOT NULL,
+    UNIQUE(athlete_id, coach_id)
+);
+CREATE INDEX IF NOT EXISTS coaching_links_coach ON coaching_links(coach_id, status);
+CREATE TABLE IF NOT EXISTS coach_notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    coach_id    INTEGER NOT NULL,
+    athlete_id  INTEGER NOT NULL,
+    kind        TEXT NOT NULL,
+    text        TEXT NOT NULL,
+    session_id  TEXT,
+    created     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS coach_notes_athlete ON coach_notes(athlete_id, created);
 """
+
+VALID_ROLES = frozenset({"athlete", "coach"})
+LINK_STATUSES = frozenset({"pending", "accepted", "rejected"})
+NOTE_KINDS = frozenset({"comment", "suggestion"})
 
 
 class EmailTaken(Exception):
@@ -160,7 +185,15 @@ class Store:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA busy_timeout=5000")
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Columns and tables added after the first install."""
+        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(users)")}
+        if "role" not in cols:
+            self.conn.execute(
+                "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'athlete'")
 
     def close(self):
         self.conn.close()
@@ -195,14 +228,16 @@ class Store:
         return value
 
     # ---- users --------------------------------------------------------------
-    def create_user(self, email: str, password_hash: str) -> dict:
+    def create_user(self, email: str, password_hash: str,
+                    role: str = "athlete") -> dict:
         email = normalise_email(email)
         token = new_token()
+        role = role if role in VALID_ROLES else "athlete"
         try:
             cursor = self.conn.execute(
-                "INSERT INTO users (email, password, sync_token, created) "
-                "VALUES (?,?,?,?)",
-                (email, password_hash, token, date.today().isoformat()))
+                "INSERT INTO users (email, password, sync_token, created, role) "
+                "VALUES (?,?,?,?,?)",
+                (email, password_hash, token, date.today().isoformat(), role))
         except sqlite3.IntegrityError as e:
             raise EmailTaken(email) from e
         self.commit()
@@ -239,6 +274,12 @@ class Store:
                       "coach_usage", "pairings", "athlete", "races", "plans",
                       "plan_sessions", "workout_templates", "decisions"):
             self.conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+        self.conn.execute(
+            "DELETE FROM coaching_links WHERE athlete_id = ? OR coach_id = ?",
+            (user_id, user_id))
+        self.conn.execute(
+            "DELETE FROM coach_notes WHERE athlete_id = ? OR coach_id = ?",
+            (user_id, user_id))
         self.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         self.commit()
 
@@ -594,6 +635,92 @@ class Store:
             (user_id, day, json.dumps(payload)))
         self.commit()
         return payload
+
+    # ---- human coach / athlete links ---------------------------------------
+    def _link_from_row(self, row) -> dict | None:
+        if not row:
+            return None
+        return dict(row)
+
+    def coaching_link(self, athlete_id: int, coach_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM coaching_links WHERE athlete_id = ? AND coach_id = ?",
+            (athlete_id, coach_id)).fetchone()
+        return self._link_from_row(row)
+
+    def coaching_link_by_id(self, link_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM coaching_links WHERE id = ?", (link_id,)).fetchone()
+        return self._link_from_row(row)
+
+    def upsert_coaching_request(self, athlete_id: int, coach_id: int) -> dict:
+        now = date.today().isoformat()
+        existing = self.coaching_link(athlete_id, coach_id)
+        if existing and existing["status"] == "accepted":
+            return existing
+        if existing:
+            self.conn.execute(
+                "UPDATE coaching_links SET status = 'pending', updated = ? "
+                "WHERE id = ?", (now, existing["id"]))
+            self.commit()
+            return self.coaching_link_by_id(existing["id"])
+        cursor = self.conn.execute(
+            "INSERT INTO coaching_links (athlete_id, coach_id, status, created, updated) "
+            "VALUES (?,?,?,?,?)",
+            (athlete_id, coach_id, "pending", now, now))
+        self.commit()
+        return self.coaching_link_by_id(cursor.lastrowid)
+
+    def set_coaching_status(self, link_id: int, status: str) -> dict | None:
+        if status not in LINK_STATUSES:
+            raise ValueError("Unknown coaching status.")
+        now = date.today().isoformat()
+        self.conn.execute(
+            "UPDATE coaching_links SET status = ?, updated = ? WHERE id = ?",
+            (status, now, link_id))
+        self.commit()
+        return self.coaching_link_by_id(link_id)
+
+    def links_for_athlete(self, athlete_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM coaching_links WHERE athlete_id = ? "
+            "ORDER BY updated DESC", (athlete_id,))
+        return [dict(r) for r in rows]
+
+    def links_for_coach(self, coach_id: int, status: str | None = None) -> list[dict]:
+        sql = "SELECT * FROM coaching_links WHERE coach_id = ?"
+        params: list = [coach_id]
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        sql += " ORDER BY updated DESC"
+        return [dict(r) for r in self.conn.execute(sql, tuple(params))]
+
+    def add_coach_note(self, coach_id: int, athlete_id: int, kind: str,
+                       text: str, session_id: str | None = None) -> dict:
+        kind = kind if kind in NOTE_KINDS else "comment"
+        created = date.today().isoformat()
+        cursor = self.conn.execute(
+            "INSERT INTO coach_notes (coach_id, athlete_id, kind, text, "
+            "session_id, created) VALUES (?,?,?,?,?,?)",
+            (coach_id, athlete_id, kind, text, session_id, created))
+        self.commit()
+        return self.coach_note(cursor.lastrowid)
+
+    def coach_note(self, note_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM coach_notes WHERE id = ?", (note_id,)).fetchone()
+        return dict(row) if row else None
+
+    def notes_for_athlete(self, athlete_id: int,
+                          coach_id: int | None = None) -> list[dict]:
+        sql = "SELECT * FROM coach_notes WHERE athlete_id = ?"
+        params: list = [athlete_id]
+        if coach_id is not None:
+            sql += " AND coach_id = ?"
+            params.append(coach_id)
+        sql += " ORDER BY id DESC"
+        return [dict(r) for r in self.conn.execute(sql, tuple(params))]
 
 
 @contextmanager

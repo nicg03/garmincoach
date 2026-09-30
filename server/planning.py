@@ -478,6 +478,37 @@ def race_review(user_id: int, race_id: str) -> dict:
     }
 
 
+def schedule_workout(user_id: int, workout: dict, day: str,
+                     assigned_by: int | None = None) -> dict:
+    """Queue a one-off workout on a date (no full plan required)."""
+    session = {
+        "id": str(uuid4()),
+        "date": day[:10],
+        "sport": workout["sport"],
+        "kind": workout.get("kind") or "easy",
+        "workout": workout,
+        "est_load": workout.get("est_load"),
+        "state": "queued",
+        "revision": 1,
+        "plan_id": "adhoc",
+    }
+    if assigned_by:
+        session["assigned_by"] = assigned_by
+    with db.store() as handle:
+        plan = handle.active_plan(user_id)
+        plan_id = (plan or {}).get("id") or "adhoc"
+        session["plan_id"] = plan_id
+        if not plan:
+            handle.save_plan(user_id, {
+                "id": plan_id, "status": "active", "race_id": None,
+                "created": date.today().isoformat(), "sessions": [session],
+            })
+        else:
+            handle.upsert_session(user_id, plan_id, session)
+            handle.commit()
+    return session
+
+
 def _llm_rationale(user_id: int, plan: dict, notes: str) -> str:
     question = (
         "The deterministic plan is already built. In 120 words, explain it "

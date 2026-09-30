@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/styles.css?v=11">
+<link rel="stylesheet" href="/static/styles.css?v=12">
 </head>
 <body>
 
@@ -21,6 +21,11 @@
 
     <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required>
     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+    <div id="gate-role" class="role-picker hidden">
+      <span class="muted">I am a</span>
+      <label><input type="radio" name="gate-role" value="athlete" checked> Athlete</label>
+      <label><input type="radio" name="gate-role" value="coach"> Coach</label>
+    </div>
     <button class="primary" type="submit" id="gate-submit">Sign in</button>
 
     <p class="error" id="gate-error"></p>
@@ -36,11 +41,13 @@
     <div class="top">
       <div class="brand">garmin<span>coach</span></div>
       <nav class="tabs">
+        <button class="tab hidden" data-tab="athletes" data-role="coach">Athletes</button>
         <button class="tab active" data-tab="dashboard">Dashboard</button>
         <button class="tab" data-tab="plan">Plan</button>
         <button class="tab" data-tab="workouts">Workouts</button>
         <button class="tab" data-tab="performance">Performance</button>
-        <button class="tab" data-tab="coach">Coach</button>
+        <button class="tab" data-tab="mycoach" data-role="athlete">My coach</button>
+        <button class="tab" data-tab="coach">AI coach</button>
         <button class="tab" data-tab="account">Account</button>
       </nav>
       <span class="muted" id="freshness"></span>
@@ -48,6 +55,69 @@
   </header>
 
   <main>
+    <section id="tab-athletes" class="panel hidden">
+      <div class="card" id="coach-inbox-card">
+        <h2>Incoming requests</h2>
+        <p class="muted">Athletes find you by email and ask to connect.</p>
+        <div id="coach-inbox"></div>
+      </div>
+      <div class="card">
+        <h2>Your athletes</h2>
+        <p class="muted" id="roster-empty">No athletes yet. When you accept a request they show up here.</p>
+        <div class="roster" id="athlete-roster"></div>
+      </div>
+      <div id="athlete-detail" class="hidden">
+        <div class="card">
+          <div class="bar">
+            <h2 id="athlete-detail-name">Athlete</h2>
+            <button type="button" class="ghost" id="athlete-detail-back">Back to list</button>
+          </div>
+          <div class="cards" id="athlete-detail-stats"></div>
+          <p class="muted" id="athlete-detail-goals"></p>
+        </div>
+        <div class="card">
+          <h2>Races and goals</h2>
+          <div class="scroll"><table id="athlete-detail-races"></table></div>
+        </div>
+        <div class="card">
+          <h2>Comments and suggestions</h2>
+          <form class="composer wrap" id="coach-note-form">
+            <select id="coach-note-kind">
+              <option value="comment">Comment</option>
+              <option value="suggestion">Suggestion</option>
+            </select>
+            <input id="coach-note-text" placeholder="Write something for this athlete" required>
+            <button class="primary" type="submit">Send</button>
+          </form>
+          <div id="coach-note-list"></div>
+        </div>
+        <div class="card">
+          <h2>Assign a workout</h2>
+          <p class="muted">Queued on their plan. Their next extension sync writes it to Garmin.</p>
+          <div class="builder">
+            <input id="ca-wo-name" placeholder="Name">
+            <select id="ca-wo-sport">
+              <option value="running">Run</option>
+              <option value="cycling">Bike</option>
+              <option value="swimming">Swim</option>
+              <option value="strength">Strength</option>
+            </select>
+            <select id="ca-wo-kind">
+              <option value="easy">Easy</option>
+              <option value="long">Long</option>
+              <option value="tempo">Tempo</option>
+              <option value="interval">Interval</option>
+              <option value="strength">Strength</option>
+            </select>
+            <input id="ca-wo-mins" type="number" min="10" max="300" value="45" title="Minutes">
+            <input id="ca-wo-date" type="date">
+          </div>
+          <button class="primary" type="button" id="ca-wo-schedule">Schedule for athlete</button>
+          <p class="muted" id="ca-wo-status"></p>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-dashboard" class="panel">
       <!-- Replaces the whole dashboard until something has been pushed. -->
       <div class="card setup-card hidden" id="onboarding">
@@ -350,9 +420,29 @@
       </div>
     </section>
 
+    <section id="tab-mycoach" class="panel hidden">
+      <div class="card">
+        <h2>Find a coach</h2>
+        <p class="muted">Search by the email they used to sign up. They have to accept before they can see your data.</p>
+        <form class="composer wrap" id="coach-lookup-form">
+          <input type="email" id="coach-lookup-email" placeholder="coach@example.com" required>
+          <button class="primary" type="submit">Look up</button>
+        </form>
+        <p class="muted" id="coach-lookup-status"></p>
+      </div>
+      <div class="card">
+        <h2>Your coaches</h2>
+        <div id="mycoach-links"></div>
+      </div>
+      <div class="card">
+        <h2>From your coach</h2>
+        <div id="mycoach-notes"></div>
+      </div>
+    </section>
+
     <section id="tab-coach" class="panel hidden">
       <div class="card hidden" id="coach-off">
-        <h2>The coach is off</h2>
+        <h2>The AI coach is off</h2>
         <p class="muted">Whoever runs this site hasn't set an
           <code>OPENAI_API_KEY</code> (or <code>ANTHROPIC_API_KEY</code>),
           so there's nothing to ask yet.</p>
@@ -469,6 +559,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=11"></script>
+<script src="/static/app.js?v=12"></script>
 </body>
 </html>

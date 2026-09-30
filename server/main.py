@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 
 from garmin_sync import metrics
 
-from . import coach, config, db, garmin_export, garmin_fetch, ingest, security
+from . import coach, coaching, config, db, garmin_export, garmin_fetch, ingest, security
 from .store import EmailTaken
 
 STATIC_DIR = config.ROOT / "server" / "static"
@@ -86,10 +86,20 @@ def _range(days: int | None, frm: str | None, to: str | None) -> tuple[str, str]
 
 def _public_user(user: dict) -> dict:
     return {
+        "id": user["id"],
         "email": user["email"],
         "since": user["created"],
         "sync_token": user["sync_token"],
+        "role": coaching.role_of(user),
     }
+
+
+def _subject_id(user: dict, athlete_id: int | None) -> int:
+    """Own data, or an accepted athlete's data when the caller is their coach."""
+    if athlete_id is None:
+        return user["id"]
+    coaching.assert_coach_of(user, athlete_id)
+    return athlete_id
 
 
 # ---- page and accounts ------------------------------------------------------
@@ -120,7 +130,8 @@ def site_config():
 @app.post("/api/signup")
 def signup(request: Request, response: Response,
            email: str = Body("", embed=True),
-           password: str = Body("", embed=True)):
+           password: str = Body("", embed=True),
+           role: str = Body("athlete", embed=True)):
     if not config.SIGNUP_OPEN:
         return JSONResponse({"error": "Signups are closed right now."}, 403)
     if security.locked_out(request):
@@ -129,10 +140,14 @@ def signup(request: Request, response: Response,
     problem = security.email_problem(email) or security.password_problem(password)
     if problem:
         return JSONResponse({"error": problem}, 400)
+    chosen = (role or "athlete").strip().lower()
+    if chosen not in ("athlete", "coach"):
+        return JSONResponse({"error": "Role must be athlete or coach."}, 400)
 
     try:
         with db.store() as handle:
-            user = handle.create_user(email, security.hash_password(password))
+            user = handle.create_user(email, security.hash_password(password),
+                                      role=chosen)
     except EmailTaken:
         # Deliberately explicit: this is a personal tool, not a service where
         # hiding which emails exist buys anything.
@@ -299,12 +314,14 @@ def activities(days: int | None = Query(None, ge=1, le=3650),
 def dashboard_metrics(days: int | None = Query(None, ge=1, le=3650),
                       frm: str | None = Query(None, alias="from"),
                       to: str | None = Query(None),
+                      athlete_id: int | None = Query(None),
                       user: dict = Depends(security.current_user)):
     """Aggregated series for the charts.
 
     Reads a warmup period before the visible window so the smoothed curves
     start where they belong, then trims it back off.
     """
+    uid = _subject_id(user, athlete_id)
     start, end = _range(days, frm, to)
     # Asking for a year when you only have a month of history would otherwise
     # draw eleven empty months, so the window shrinks to the data you have.
@@ -312,14 +329,14 @@ def dashboard_metrics(days: int | None = Query(None, ge=1, le=3650),
     # history would seed the smoothed curves with rest days that never
     # happened, and the coach -- which reads from the first stored day -- would
     # then quote different numbers than the charts.
-    first = db.status(user["id"]).get("first")
+    first = db.status(uid).get("first")
     if first and first > start:
         start = first
     warmup = (date.fromisoformat(start) - timedelta(days=WARMUP_DAYS)).isoformat()
     if first and warmup < first:
         warmup = first
 
-    day_rows, activity_rows = db.window(user["id"], warmup, end)
+    day_rows, activity_rows = db.window(uid, warmup, end)
     payload = metrics.build(day_rows, activity_rows, start=warmup, end=end,
                             visible_from=start)
     payload["window"] = {"from": start, "to": end}
@@ -332,15 +349,18 @@ from . import planning
 
 
 @app.get("/api/performance")
-def performance_view(user: dict = Depends(security.current_user)):
+def performance_view(athlete_id: int | None = Query(None),
+                     user: dict = Depends(security.current_user)):
     from garmin_sync.performance import build as build_perf
-    _days, activities = db.window(user["id"], None, None)
-    return build_perf(activities, db.meta(user["id"]))
+    uid = _subject_id(user, athlete_id)
+    _days, activities = db.window(uid, None, None)
+    return build_perf(activities, db.meta(uid))
 
 
 @app.get("/api/athlete")
-def get_athlete(user: dict = Depends(security.current_user)):
-    return planning.athlete(user["id"])
+def get_athlete(athlete_id: int | None = Query(None),
+                user: dict = Depends(security.current_user)):
+    return planning.athlete(_subject_id(user, athlete_id))
 
 
 @app.put("/api/athlete")
@@ -350,8 +370,9 @@ def put_athlete(payload: dict[str, Any] = Body(...),
 
 
 @app.get("/api/races")
-def get_races(user: dict = Depends(security.current_user)):
-    return {"races": planning.list_races(user["id"])}
+def get_races(athlete_id: int | None = Query(None),
+              user: dict = Depends(security.current_user)):
+    return {"races": planning.list_races(_subject_id(user, athlete_id))}
 
 
 @app.post("/api/races")
@@ -371,11 +392,13 @@ def remove_race(race_id: str, user: dict = Depends(security.current_user)):
 
 @app.get("/api/plan")
 def get_plan(plan_id: str | None = None,
+             athlete_id: int | None = Query(None),
              user: dict = Depends(security.current_user)):
-    plan = planning.handle_get_plan(user["id"], plan_id)
+    uid = _subject_id(user, athlete_id)
+    plan = planning.handle_get_plan(uid, plan_id)
     if not plan:
-        return {"plan": None, "adherence": planning.adherence(user["id"])}
-    return {"plan": plan, "adherence": planning.adherence(user["id"])}
+        return {"plan": None, "adherence": planning.adherence(uid)}
+    return {"plan": plan, "adherence": planning.adherence(uid)}
 
 
 @app.get("/api/insights")
@@ -477,28 +500,10 @@ def schedule_one(payload: dict[str, Any] = Body(...),
     except Exception as e:
         return JSONResponse({"error": str(e)}, 400)
     day = (payload.get("date") or date.today().isoformat())[:10]
-    session = {
-        "id": str(__import__("uuid").uuid4()),
-        "date": day,
-        "sport": workout["sport"],
-        "kind": workout.get("kind") or "easy",
-        "workout": workout,
-        "est_load": workout.get("est_load"),
-        "state": "queued",
-        "revision": 1,
-    }
-    with db.store() as handle:
-        plan = handle.active_plan(user["id"])
-        plan_id = (plan or {}).get("id") or "adhoc"
-        if not plan:
-            handle.save_plan(user["id"], {
-                "id": plan_id, "status": "active", "race_id": None,
-                "created": date.today().isoformat(), "sessions": [session],
-            })
-        else:
-            session["plan_id"] = plan_id
-            handle.upsert_session(user["id"], plan_id, session)
-            handle.commit()
+    athlete_id = payload.get("athlete_id")
+    uid = _subject_id(user, int(athlete_id) if athlete_id is not None else None)
+    assigned_by = user["id"] if athlete_id is not None else None
+    session = planning.schedule_workout(uid, workout, day, assigned_by=assigned_by)
     return {"session": session}
 
 
@@ -519,6 +524,70 @@ def review_race(race_id: str, user: dict = Depends(security.current_user)):
         return planning.race_review(user["id"], race_id)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, 400)
+
+
+# ---- human coach / athlete --------------------------------------------------
+@app.get("/api/coaches/lookup")
+def coaches_lookup(email: str = Query(""),
+                   user: dict = Depends(security.current_user)):
+    found = coaching.lookup_coach(email)
+    if not found:
+        return JSONResponse({"error": "No coach with that email."}, 404)
+    return found
+
+
+@app.post("/api/coaching/request")
+def coaching_request(payload: dict[str, Any] = Body(...),
+                     user: dict = Depends(security.current_user)):
+    coach_id = payload.get("coach_id")
+    if coach_id is None:
+        return JSONResponse({"error": "Pick a coach first."}, 400)
+    return coaching.request_link(user, int(coach_id))
+
+
+@app.get("/api/coaching/mine")
+def coaching_mine(user: dict = Depends(security.current_user)):
+    return coaching.athlete_links(user)
+
+
+@app.get("/api/coaching/inbox")
+def coaching_inbox(user: dict = Depends(security.current_user)):
+    return coaching.inbox(user)
+
+
+@app.post("/api/coaching/{link_id}/accept")
+def coaching_accept(link_id: int, user: dict = Depends(security.current_user)):
+    return coaching.set_link_status(user, link_id, "accepted")
+
+
+@app.post("/api/coaching/{link_id}/reject")
+def coaching_reject(link_id: int, user: dict = Depends(security.current_user)):
+    return coaching.set_link_status(user, link_id, "rejected")
+
+
+@app.get("/api/coaching/athletes")
+def coaching_athletes(user: dict = Depends(security.current_user)):
+    return coaching.roster(user)
+
+
+@app.get("/api/coaching/athletes/{athlete_id}")
+def coaching_athlete(athlete_id: int, user: dict = Depends(security.current_user)):
+    return coaching.athlete_overview(user, athlete_id)
+
+
+@app.get("/api/coaching/athletes/{athlete_id}/notes")
+def coaching_notes(athlete_id: int, user: dict = Depends(security.current_user)):
+    return coaching.list_notes(user, athlete_id)
+
+
+@app.post("/api/coaching/athletes/{athlete_id}/notes")
+def coaching_add_note(athlete_id: int, payload: dict[str, Any] = Body(...),
+                      user: dict = Depends(security.current_user)):
+    return coaching.add_note(
+        user, athlete_id,
+        payload.get("kind") or "comment",
+        payload.get("text") or "",
+        payload.get("session_id"))
 
 
 # ---- coach ------------------------------------------------------------------
