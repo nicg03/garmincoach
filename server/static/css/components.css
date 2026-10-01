@@ -168,6 +168,11 @@ label.field > span { display: block; margin-bottom: 4px; }
   .cards.strip .stat:last-child { border-right: none; }
 }
 
+/* ---- grouped headline tiles ---------------------------------------------- */
+.metric-groups { display: grid; gap: 16px; margin-bottom: 12px; }
+.metric-group .kicker { margin: 0 0 8px; }
+.metric-group .cards { margin-bottom: 0; }
+
 /* ---- Today --------------------------------------------------------------- */
 .readiness {
   display: grid; gap: 16px; padding: 22px;
@@ -282,6 +287,7 @@ tr.clickable { cursor: pointer; }
   text-transform: none; letter-spacing: 0;
 }
 .info:hover { color: var(--ink); border-color: var(--ink); }
+th .info { vertical-align: middle; margin-left: 4px; }
 .popover {
   position: absolute; z-index: 30; max-width: 320px; padding: 12px 14px;
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
@@ -289,6 +295,7 @@ tr.clickable { cursor: pointer; }
 }
 .popover h3 { font-size: 13px; margin: 0 0 4px; }
 .popover p { margin: 0; color: var(--muted); }
+.popover a { display: inline-block; margin-top: 8px; }
 
 .banner {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 16px;
@@ -303,6 +310,7 @@ tr.clickable { cursor: pointer; }
 .setup-card { padding: 28px 24px; }
 .setup-card h2 { font-size: 24px; margin: 0 0 8px; letter-spacing: -.03em; }
 .kicker {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .12em;
   text-transform: uppercase; color: var(--accent);
 }

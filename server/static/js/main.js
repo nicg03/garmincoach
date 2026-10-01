@@ -10,15 +10,16 @@ import { destroyCharts, initCharts } from './core/charts.js';
 import { installGlossary } from './core/glossary.js';
 import * as athletes from './views/athletes.js';
 import * as coaching from './views/coaching.js';
+import * as guide from './views/guide.js';
 import * as insights from './views/insights.js';
 import * as settings from './views/settings.js';
 import * as today from './views/today.js';
 import * as training from './views/training.js';
 
-const VIEWS = { today, training, insights, coaching, settings, athletes };
+const VIEWS = { today, training, insights, coaching, settings, athletes, guide };
 const TITLES = {
   today: 'Today', training: 'Training', insights: 'Insights',
-  coaching: 'Coaching', settings: 'Settings', athletes: 'Athletes',
+  coaching: 'Coaching', settings: 'Settings', athletes: 'Athletes', guide: 'Guide',
 };
 
 const ICON_PATHS = {

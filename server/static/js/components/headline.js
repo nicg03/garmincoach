@@ -1,4 +1,5 @@
-/* The six headline numbers, shared by Today, Insights and an athlete's page. */
+/* The headline numbers, split into Load and Recovery so Form is not sitting
+   next to Sleep with no context. Shared by Today, Insights and an athlete page. */
 import { info } from '../core/glossary.js';
 import { esc, fmt, signed, tile } from '../core/ui.js';
 
@@ -17,25 +18,46 @@ export function acwrTone(acwr) {
   return ['good', 'in the sweet spot'];
 }
 
-export function headlineTiles(h = {}) {
+function has(v) {
+  return v !== null && v !== undefined;
+}
+
+export function loadTiles(h = {}) {
   const [fTone, fNote] = formTone(h.form);
   const [rTone, rNote] = acwrTone(h.acwr);
+  return [
+    tile('Form', fmt(h.form),
+      [fNote, has(h.ctl) ? `Fitness ${fmt(h.ctl)}` : '', has(h.atl) ? `Fatigue ${fmt(h.atl)}` : '']
+        .filter(Boolean).join(' · '), fTone, info('form')),
+    tile('Load ratio', fmt(h.acwr, 2), rNote, rTone, info('load_ratio')),
+    tile('This week', `${fmt(h.week_km, 1)} km`,
+      `${h.week_sessions || 0} sessions · load ${fmt(h.week_load)}`, '', info('week')),
+  ].join('');
+}
+
+export function recoveryTiles(h = {}) {
   const hrvTone = h.hrv_delta > 0 ? 'good' : h.hrv_delta < -3 ? 'warn' : '';
   const rhrTone = h.resting_hr_delta > 2 ? 'warn' : h.resting_hr_delta < 0 ? 'good' : '';
-  const has = (v) => v !== null && v !== undefined;
   return [
-    tile('Form (TSB)', fmt(h.form),
-      [fNote, has(h.ctl) ? `CTL ${fmt(h.ctl)}` : '', has(h.atl) ? `ATL ${fmt(h.atl)}` : '']
-        .filter(Boolean).join(' · '), fTone, info('tsb')),
-    tile('Load ratio', fmt(h.acwr, 2), rNote, rTone, info('ctl')),
     tile('HRV', fmt(h.hrv), has(h.hrv_delta) ? `${signed(h.hrv_delta)} vs baseline` : (h.hrv_status || ''),
       hrvTone, info('hrv')),
     tile('Resting HR', fmt(h.resting_hr),
-      has(h.resting_hr_delta) ? `${signed(h.resting_hr_delta)} vs baseline` : '', rhrTone),
+      has(h.resting_hr_delta) ? `${signed(h.resting_hr_delta)} vs baseline` : '', rhrTone, info('rhr')),
     tile('Sleep', fmt(h.sleep_score), h.sleep_h ? `${fmt(h.sleep_h, 1)} h last night` : '', '', info('sleep')),
-    tile('This week', `${fmt(h.week_km, 1)} km`,
-      `${h.week_sessions || 0} sessions · load ${fmt(h.week_load)}`),
   ].join('');
+}
+
+export function groupedHeadline(h = {}) {
+  return `<div class="metric-groups">
+    <section class="metric-group">
+      <p class="kicker">Load</p>
+      <div class="cards">${loadTiles(h)}</div>
+    </section>
+    <section class="metric-group">
+      <p class="kicker">Recovery</p>
+      <div class="cards">${recoveryTiles(h)}</div>
+    </section>
+  </div>`;
 }
 
 export function activityRows(activities, limit = 0) {

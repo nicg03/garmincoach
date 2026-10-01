@@ -20,7 +20,8 @@ export async function render(root, ctx = {}) {
   const opts = { athleteId, readOnly: Boolean(ctx.readOnly), key: athleteId || '' };
   const wanted = (ctx.path || [])[0];
   const sub = TABS.some(([key]) => key === wanted) ? wanted : 'calendar';
-  root.innerHTML = `${subnav(ctx.base || '#/training', TABS, sub)}<div data-sub>${loadingPage()}</div>`;
+  root.innerHTML = `<div class="page-head">${subnav(ctx.base || '#/training', TABS, sub)}
+    <a class="btn-link" href="#/guide/training">Guide</a></div><div data-sub>${loadingPage()}</div>`;
   const host = $('[data-sub]', root);
   if (sub === 'races') return races(host, opts);
   if (sub === 'workouts') return workouts(host, opts);
@@ -88,7 +89,7 @@ function paceBoard(paces, perf) {
   const source = paces.note || (paces.source === 'vdot' && from.mark
     ? `From VDOT ${fmt(paces.vdot, 1)} (${from.mark} ${from.time || ''}). Easy is a range; T/I/R are ± a few s/km.`
     : (paces.source ? `From ${paces.source}.` : ''));
-  return `<div class="card"><div class="card-head"><h2>Training paces ${info('vdot')}</h2></div>
+  return `<div class="card"><div class="card-head"><h2>Training paces ${info('paces')}</h2></div>
     <div class="pace-board">${chips}</div><p class="muted">${esc(source)}</p></div>`;
 }
 
@@ -113,7 +114,7 @@ function paceInsights(body) {
           <button type="button" class="ghost" data-insight="dismiss">Keep current</button>
         </div><p class="muted">Nothing changes until you accept.</p></div>`
     : '<p class="muted">Quality days are inside the planned range, or there aren\'t enough sessions with splits to suggest a change.</p>';
-  return `<div class="card pace-insights"><div class="card-head"><h2>Pace check</h2></div>
+  return `<div class="card pace-insights"><div class="card-head"><h2>Pace check ${info('pace_check')}</h2></div>
     <p class="muted">Completed quality sessions against the range that was on the watch.</p>
     <div class="insight-list">${bars}</div>${recHtml}</div>`;
 }
@@ -205,8 +206,8 @@ function drawProjected(canvas, series) {
       labels: series.map((r) => shortDate(r.date)),
       datasets: [
         { label: 'Load', data: series.map((r) => r.load), borderColor: COLORS.load, backgroundColor: COLORS.load, fill: true, tension: .2, pointRadius: 0 },
-        { label: 'ATL', data: series.map((r) => r.atl), borderColor: COLORS.atl, tension: .3, pointRadius: 0 },
-        { label: 'CTL', data: series.map((r) => r.ctl), borderColor: COLORS.ctl, tension: .3, pointRadius: 0 },
+        { label: 'Fatigue', data: series.map((r) => r.atl), borderColor: COLORS.atl, tension: .3, pointRadius: 0 },
+        { label: 'Fitness', data: series.map((r) => r.ctl), borderColor: COLORS.ctl, tension: .3, pointRadius: 0 },
       ],
     },
     options: baseOptions(),
@@ -248,10 +249,10 @@ async function calendar(host, opts) {
         ' <a class="btn-link" href="#/training/races">Build a plan for a race</a>'}</p>` : `<div class="cards">
         ${tile('Weeks', fmt(h.weeks), h.short_block ? `short vs ${h.ideal_weeks} ideal` : (h.family || ''))}
         ${tile('Sessions', fmt(h.sessions), adh.planned ? `${adh.completed}/${adh.planned} done` +
-          (adh.skipped ? `, ${adh.skipped} skipped` : '') : '')}
+          (adh.skipped ? `, ${adh.skipped} skipped` : '') : '', '', info('adherence'))}
         ${tile('VDOT', fmt(h.vdot, 1), '', '', info('vdot'))}
         ${tile('Peak km/week', fmt(h.weekly_km_peak), `now ${fmt(h.weekly_km_now)}`)}
-        ${tile('CTL at race', fmt(h.ctl_at_race), `now ${fmt(h.ctl_now)}`, '', info('ctl'))}
+        ${tile('Fitness at race', fmt(h.ctl_at_race), `now ${fmt(h.ctl_now)}`, '', info('fitness'))}
       </div>`}
     </div>
     ${paceBoard(h.paces || perf.paces || {}, perf)}
@@ -261,7 +262,7 @@ async function calendar(host, opts) {
       <div data-weeks>${weekCalendar(plan)}</div>
     </div>
     <div class="card session-sheet hidden" data-sheet></div>
-    ${(plan.projected || []).length ? `<div class="card"><div class="card-head"><h2>Projected load</h2></div>
+    ${(plan.projected || []).length ? `<div class="card"><div class="card-head"><h2>Projected load ${info('projected')}</h2></div>
       <div class="chart"><canvas id="chart-projected"></canvas></div></div>` : ''}`;
 
   const canvas = $('#chart-projected', host);
@@ -341,7 +342,7 @@ async function races(host, opts) {
       <div class="card-head"><h2>Races</h2></div>
       ${list.length ? `<div class="scroll"><table>
         <thead><tr><th>Date</th><th>Race</th><th>Priority</th><th>Distance</th><th>Goal</th>
-          <th>Goal vs fitness</th>${readOnly ? '' : '<th></th>'}</tr></thead>
+          <th>Goal vs fitness ${info('goal')}</th>${readOnly ? '' : '<th></th>'}</tr></thead>
         <tbody>${rows}</tbody></table></div>`
         : emptyState('No races yet', readOnly ? '' : 'Add your next race below.')}
       <p class="muted" data-review-out aria-live="polite"></p>

@@ -1,7 +1,8 @@
 /* Today: am I ready, what's the session, and what changed. Everything else
    is one click away. */
-import { ACTIVITY_HEAD, activityRows, headlineTiles } from '../components/headline.js';
+import { ACTIVITY_HEAD, activityRows, groupedHeadline } from '../components/headline.js';
 import { api, post } from '../core/api.js';
+import { info } from '../core/glossary.js';
 import { rerender } from '../core/router.js';
 import { cached, hasData, invalidate, role, state } from '../core/state.js';
 import {
@@ -48,7 +49,7 @@ function sessionBlock(decision) {
   const session = decision && decision.session;
   if (!session) {
     return `<div class="session">
-      <p class="kicker">Today's session</p>
+      <p class="kicker">Today's session ${info('session')}</p>
       <h3>Nothing planned</h3>
       <p class="muted">Plan a block around a race or put a single workout on your watch.</p>
       <div class="row-actions">
@@ -63,7 +64,7 @@ function sessionBlock(decision) {
   const km = session.distance_km != null ? `${fmt(session.distance_km, 1)} km` : '';
   const applied = decision.applied;
   return `<div class="session">
-    <p class="kicker">Today's session ${session.assigned_by ? '<span class="badge">from your coach</span>' : ''}</p>
+    <p class="kicker">Today's session ${info('session')} ${session.assigned_by ? '<span class="badge">from your coach</span>' : ''}</p>
     <h3>${esc(name)}</h3>
     <p class="muted">${esc(desc || [km, (wo.targets && wo.targets.work) || ''].filter(Boolean).join(' · '))}</p>
     ${applied ? `<p class="muted">You chose: <strong>${esc(applied)}</strong>.</p>` : ''}
@@ -76,7 +77,8 @@ function sessionBlock(decision) {
 
 function readinessCard(decision) {
   if (!decision) {
-    return `<div class="readiness"><div><p class="kicker">Readiness</p>
+    return `<div class="readiness"><div>
+      <p class="kicker">Readiness ${info('readiness')}</p>
       <p class="verdict">No read on today yet</p>
       <p class="muted">Readiness needs a few mornings of HRV and resting heart rate.</p></div></div>`;
   }
@@ -84,7 +86,7 @@ function readinessCard(decision) {
   const h = decision.headline || {};
   return `<section class="readiness ${tone}" aria-label="Readiness">
     <div>
-      <p class="kicker">${esc(longDate(todayIso()))}</p>
+      <p class="kicker">${esc(longDate(todayIso()))} ${info('readiness')}</p>
       <p class="verdict">${verdict}</p>
       <p>${esc(decision.reason || fallback)}</p>
       <p class="muted">${esc(deltaLine(h))}</p>
@@ -137,7 +139,7 @@ export async function render(root) {
   root.innerHTML = `
     ${historyBanner(status)}
     ${readinessCard(decision)}
-    <div class="cards strip">${headlineTiles(metrics.headline || {})}</div>
+    ${groupedHeadline(metrics.headline || {})}
     <div class="grid-2">
       ${raceCard(races.races)}
       ${status.coach ? `<div class="card"><div class="card-head"><h2>Coach's read</h2>
@@ -149,7 +151,7 @@ export async function render(root) {
         <a class="btn-link" href="#/insights/activities">All activities</a></div>
       <div class="scroll"><table>${ACTIVITY_HEAD}<tbody>${activityRows(recent, 5) ||
         `<tr><td colspan="7">${status.days
-          ? 'Nessuna attività recente — sincronizza'
+          ? 'No recent activities — sync to bring them in.'
           : 'Nothing here yet.'}</td></tr>`}</tbody></table></div>
     </div>`;
 

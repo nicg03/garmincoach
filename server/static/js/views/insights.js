@@ -1,7 +1,7 @@
 /* Insights: the numbers behind Today, grouped by question. How hard have I
    been training (Load), am I absorbing it (Recovery), am I getting faster
    (Performance), and what did I actually do (Activities). */
-import { ACTIVITY_HEAD, activityRows, headlineTiles } from '../components/headline.js';
+import { ACTIVITY_HEAD, activityRows, loadTiles } from '../components/headline.js';
 import { api, scoped } from '../core/api.js';
 import { COLORS, PALETTE, axes, baseOptions, draw } from '../core/charts.js';
 import { info } from '../core/glossary.js';
@@ -23,6 +23,7 @@ export async function render(root, ctx = {}) {
       ${subnav(ctx.base || '#/insights', TABS, sub)}
       ${ranged ? `<div class="chips" role="group" aria-label="Time range">${RANGES.map(([key, label]) =>
         `<button type="button" class="chip" data-range="${key}" aria-pressed="${state.range === key}">${label}</button>`).join('')}</div>` : ''}
+      <a class="btn-link" href="#/guide/${sub === 'activities' ? 'about' : sub}">Guide</a>
     </div>
     <div data-sub>${loadingPage()}</div>`;
   $$('[data-range]', root).forEach((chip) => chip.addEventListener('click', () => {
@@ -58,9 +59,9 @@ function canvas(id, tall = false) {
 // ---- load ---------------------------------------------------------------------
 function load(host, data) {
   host.innerHTML = `
-    <div class="cards strip">${headlineTiles(data.headline || {})}</div>
-    ${card('Load and form', `<p class="muted">Bars are daily load. Fitness (CTL) is the slow line,
-      fatigue (ATL) the fast one; form is the gap between them.</p>${canvas('chart-load', true)}`, 'tsb')}
+    <div class="cards">${loadTiles(data.headline || {})}</div>
+    ${card('Load and form', `<p class="muted">Bars are daily load. Fitness is the slow line,
+      fatigue the fast one; form is the gap between them.</p>${canvas('chart-load', true)}`, 'form')}
     ${card('Weekly volume', canvas('chart-weeks'))}`;
   const labels = data.dates.map(shortDate);
   const a = axes();
@@ -69,8 +70,8 @@ function load(host, data) {
       labels,
       datasets: [
         { type: 'bar', label: 'Load', data: data.training.map((r) => r.load), backgroundColor: COLORS.load, borderRadius: 2, order: 3 },
-        { type: 'line', label: 'ATL (7d)', data: data.training.map((r) => r.atl), borderColor: COLORS.atl, borderWidth: 2, pointRadius: 0, tension: .3 },
-        { type: 'line', label: 'CTL (42d)', data: data.training.map((r) => r.ctl), borderColor: COLORS.ctl, borderWidth: 2, pointRadius: 0, tension: .3 },
+        { type: 'line', label: 'Fatigue (ATL 7d)', data: data.training.map((r) => r.atl), borderColor: COLORS.atl, borderWidth: 2, pointRadius: 0, tension: .3 },
+        { type: 'line', label: 'Fitness (CTL 42d)', data: data.training.map((r) => r.ctl), borderColor: COLORS.ctl, borderWidth: 2, pointRadius: 0, tension: .3 },
         { type: 'line', label: 'Form', data: data.training.map((r) => r.form), borderColor: COLORS.form, borderWidth: 1.5, borderDash: [4, 3], pointRadius: 0, tension: .3, yAxisID: 'y1' },
       ],
     },
@@ -105,7 +106,7 @@ function recovery(host, data) {
   host.innerHTML = `
     <div class="cards">
       ${tile('HRV', fmt(h.hrv), h.hrv_delta != null ? `${h.hrv_delta > 0 ? '+' : ''}${fmt(h.hrv_delta, 1)} vs baseline` : (h.hrv_status || ''), '', info('hrv'))}
-      ${tile('Resting HR', fmt(h.resting_hr), h.resting_hr_delta != null ? `${h.resting_hr_delta > 0 ? '+' : ''}${fmt(h.resting_hr_delta, 1)} vs baseline` : '')}
+      ${tile('Resting HR', fmt(h.resting_hr), h.resting_hr_delta != null ? `${h.resting_hr_delta > 0 ? '+' : ''}${fmt(h.resting_hr_delta, 1)} vs baseline` : '', '', info('rhr'))}
       ${tile('Sleep', fmt(h.sleep_score), h.sleep_h ? `${fmt(h.sleep_h, 1)} h last night` : '', '', info('sleep'))}
     </div>
     ${card('HRV and resting heart rate', `<p class="muted">Solid lines are daily values, dashed lines your
@@ -189,24 +190,27 @@ async function performance(host, opts) {
     .map((e) => `<tr><td>${esc(e.date)}</td><td>${esc(e.pace)}</td><td>${esc(e.hr)}</td><td>${esc(e.decoupling)}%</td></tr>`).join('');
 
   host.innerHTML = `
+    <h3 class="section-title">Current fitness</h3>
     <div class="cards">
       ${tile('VDOT', fmt(p.vdot, 1), p.vdot_from && p.vdot_from.mark ? `from your ${p.vdot_from.mark}` : '', '', info('vdot'))}
-      ${tile('Critical speed', esc((p.critical_speed && p.critical_speed.pace) || '--'), 'about threshold pace')}
-      ${tile('Easy / hard', dist.easy_pct != null ? `${fmt(dist.easy_pct)}/${fmt(dist.hard_pct)}` : '--', 'last 6 weeks, by HR zone', '', info('polar'))}
-      ${tile('Monotony', fmt(fos.monotony, 2), fos.strain != null ? `strain ${fmt(fos.strain)}` : 'last 7 days', '', info('monotony'))}
+      ${tile('Critical speed', esc((p.critical_speed && p.critical_speed.pace) || '--'), 'about threshold pace', '', info('cs'))}
     </div>
     <div class="grid-2">
       ${card('Best efforts', `<div class="scroll"><table><thead><tr><th>Distance</th><th>Time</th><th>Pace</th><th>Date</th></tr></thead>
         <tbody>${records || '<tr><td colspan="4">Needs a few hard runs first.</td></tr>'}</tbody></table></div>`)}
       ${card('Race predictions', `<div class="scroll"><table><thead><tr><th>Distance</th><th>VDOT</th><th>Riegel</th><th>Garmin</th></tr></thead>
-        <tbody>${predictions || '<tr><td colspan="4">Needs a few hard runs first.</td></tr>'}</tbody></table></div>`, 'vdot')}
+        <tbody>${predictions || '<tr><td colspan="4">Needs a few hard runs first.</td></tr>'}</tbody></table></div>`, 'predictions')}
     </div>
-    <div class="grid-2">
-      ${card('Pace curve', `<p class="muted">Your best pace at each distance. Higher is faster.</p>${canvas('chart-curve')}`)}
-      ${card('Training paces', `<div class="rows">${paces || '<div><span>Paces</span><span>Need a 5k-ish effort first</span></div>'}</div>`)}
+    ${card('Pace curve', `<p class="muted">Your best pace at each distance. Higher is faster.</p>${canvas('chart-curve')}`)}
+    <h3 class="section-title">How you train</h3>
+    <div class="cards">
+      ${tile('Easy vs hard', dist.easy_pct != null ? `${fmt(dist.easy_pct)}/${fmt(dist.hard_pct)}` : '--', 'last 6 weeks, by HR zone · 80/20', '', info('polar'))}
+      ${tile('Monotony', fmt(fos.monotony, 2), fos.strain != null ? `strain ${fmt(fos.strain)}` : 'last 7 days', '', info('monotony'))}
     </div>
+    ${card('Training paces', `<div class="rows">${paces || '<div><span>Paces</span><span>Need a 5k-ish effort first</span></div>'}</div>`, 'paces')}
+    <h3 class="section-title">Aerobic work</h3>
     <div class="grid-2">
-      ${card('Aerobic efficiency', `<p class="muted">Heart rate per unit of pace on steady runs. Falling means fitter.</p>${canvas('chart-efficiency')}`)}
+      ${card('Aerobic efficiency', `<p class="muted">Heart rate per unit of pace on steady runs. Falling means fitter.</p>${canvas('chart-efficiency')}`, 'efficiency')}
       ${card('Long-run decoupling', `<div class="scroll"><table><thead><tr><th>Date</th><th>Pace</th><th>HR</th><th>Drift</th></tr></thead>
         <tbody>${decoupling || '<tr><td colspan="4">Needs long runs with splits.</td></tr>'}</tbody></table></div>`, 'decoupling')}
     </div>`;

@@ -192,6 +192,27 @@ main {
 .page-head .chips { padding-bottom: 6px; }
 
 .section-title { font-size: 15px; margin: 22px 0 10px; letter-spacing: -.01em; }
+.section-title:first-child { margin-top: 4px; }
+
+.guide-toc {
+  display: flex; flex-wrap: wrap; gap: 8px 16px;
+  margin: 0 0 8px; padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.guide-toc a { font-size: 13px; font-weight: 500; color: var(--accent); text-decoration: none; }
+.guide-toc a:hover { text-decoration: underline; }
+.guide-section, .guide-entry { scroll-margin-top: 72px; }
+.guide-section > .muted { margin: -4px 0 12px; max-width: 42em; }
+.guide-entry h3 { font-size: 15px; margin: 0 0 6px; }
+.guide-entry > p { margin: 0; }
+.guide-entry dl { margin: 10px 0 0; }
+.guide-entry dt {
+  font-size: 11px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); margin: 10px 0 2px;
+}
+.guide-entry dd { margin: 0; }
+
+.page-head .btn-link { padding-bottom: 10px; }
 
 .grid-2 { display: grid; gap: 12px; margin-bottom: 12px; }
 @media (min-width: 860px) {

@@ -2,6 +2,7 @@
    athlete's page that reuses Training and Insights read-only. */
 import { acwrTone, formTone } from '../components/headline.js';
 import { api, post } from '../core/api.js';
+import { info } from '../core/glossary.js';
 import { rerender } from '../core/router.js';
 import { cached, emit, invalidate } from '../core/state.js';
 import {
@@ -129,10 +130,10 @@ function overview(host, body, id) {
   const goals = (body.profile && body.profile.notes) || body.goals || '';
   host.innerHTML = `
     <div class="cards">
-      ${tile('Fitness (CTL)', fmt(body.ctl), '')}
-      ${tile('Form (TSB)', fmt(body.form), fNote, fTone)}
-      ${tile('Load ratio', fmt(body.acwr, 2), rNote, rTone)}
-      ${tile('HRV', fmt(body.hrv), body.hrv_delta != null ? `${signed(body.hrv_delta)} vs baseline` : '')}
+      ${tile('Fitness', fmt(body.ctl), '', '', info('fitness'))}
+      ${tile('Form', fmt(body.form), fNote, fTone, info('form'))}
+      ${tile('Load ratio', fmt(body.acwr, 2), rNote, rTone, info('load_ratio'))}
+      ${tile('HRV', fmt(body.hrv), body.hrv_delta != null ? `${signed(body.hrv_delta)} vs baseline` : '', '', info('hrv'))}
       ${tile('This week', `${fmt(body.week_km, 1)} km`, '')}
     </div>
     <div class="grid-2">

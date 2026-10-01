@@ -1,6 +1,7 @@
 /* Coaching: the AI coach (briefing and chat) and, for athletes, the human
    coach they're linked to. The conversation survives moving between pages. */
 import { api, post } from '../core/api.js';
+import { info } from '../core/glossary.js';
 import { rerender } from '../core/router.js';
 import { cached, invalidate, role, state } from '../core/state.js';
 import { $, $$, busy, emptyState, esc, loadingPage, markdown, skeleton, subnav, toast } from '../core/ui.js';
@@ -16,7 +17,8 @@ export async function render(root, ctx = {}) {
   const tabs = role() === 'athlete' ? [['ai', 'AI coach'], ['coach', 'My coach']] : [['ai', 'AI coach']];
   const wanted = (ctx.path || [])[0];
   const sub = tabs.some(([key]) => key === wanted) ? wanted : 'ai';
-  root.innerHTML = `${tabs.length > 1 ? subnav('#/coaching', tabs, sub) : ''}<div data-sub>${loadingPage()}</div>`;
+  root.innerHTML = `<div class="page-head">${tabs.length > 1 ? subnav('#/coaching', tabs, sub) : ''}
+    <a class="btn-link" href="#/guide/coaching">Guide</a></div><div data-sub>${loadingPage()}</div>`;
   const host = $('[data-sub]', root);
   if (sub === 'coach') return humanCoach(host);
   return aiCoach(host);
@@ -34,7 +36,7 @@ function aiCoach(host) {
     ? `<span class="muted">${status.coach_used} of ${status.coach_limit} questions used today</span>` : '';
   host.innerHTML = `
     <div class="card">
-      <div class="card-head"><h2>Briefing</h2>
+      <div class="card-head"><h2>Briefing ${info('coaching_ai')}</h2>
         <button type="button" class="ghost small" data-rebrief>Refresh</button></div>
       <div class="prose" data-brief>${skeleton('line', 4)}</div>
     </div>
@@ -151,7 +153,7 @@ async function humanCoach(host) {
   host.innerHTML = `
     <div class="grid-2">
       <div class="card">
-        <div class="card-head"><h2>Your coaches</h2></div>
+        <div class="card-head"><h2>Your coaches ${info('coaching_human')}</h2></div>
         ${links.length ? links.map((l) => `<div class="list-row"><span>${esc(l.coach_email)}</span>
           <span class="badge ${l.status === 'accepted' ? 'ok' : l.status === 'rejected' ? 'bad' : ''}">${esc(l.status)}</span></div>`).join('')
           : '<p class="muted">No coach yet. A coach sees your data and plan, can leave notes and assign workouts.</p>'}
