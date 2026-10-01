@@ -95,4 +95,4 @@ class GarminClient:
         ]
 
     def activities_spec(self, limit: int = 50) -> dict:
-        return {"label": "activities", "url": ep.ACTIVITIES.format(limit=limit, start=0)}
+        return {"label": "activities", "url": ep.activities_path(limit=limit, start=0)}

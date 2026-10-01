@@ -45,6 +45,11 @@ HISTORY_FLOOR = date(2015, 1, 1)
 # Garmin's activity list pages at 50; a page covers weeks for most people.
 ACTIVITIES_PER_PAGE = 50
 
+# Incremental sync asks for several newest-first pages so a busy week still
+# lands, then the direct connection keeps paging while a page comes back full.
+INCREMENTAL_ACTIVITY_PAGES = 3
+EXTRA_ACTIVITY_PAGES = 10
+
 DAY_LABELS = ("daily", "sleep", "hrv", "readiness")
 
 
@@ -107,6 +112,38 @@ def days_before(before: str, limit: int, today: str | None = None) -> list[str]:
             for i in range((end - start).days + 1)]
 
 
+def activity_date_window(dates: list[str], today: str | None = None
+                         ) -> tuple[str, str]:
+    """Garmin startDate/endDate for an incremental activity list.
+
+    `dates` is newest-first. `endDate` is tomorrow so an activity whose local
+    calendar date is ahead of the server's UTC date is not clipped.
+    """
+    today_d = date.fromisoformat(today) if today else date.today()
+    end = today_d + timedelta(days=1)
+    start = date.fromisoformat(dates[-1]) if dates else today_d
+    if start > end:
+        start = today_d
+    return start.isoformat(), end.isoformat()
+
+
+def activity_specs(start: int, pages: int,
+                   start_date: str | None = None,
+                   end_date: str | None = None) -> list[dict]:
+    """Paginated activity-list specs, newest first."""
+    start0 = max(0, int(start or 0))
+    specs = []
+    for i in range(max(0, pages)):
+        offset = start0 + i * ACTIVITIES_PER_PAGE
+        specs.append({
+            "label": f"activities::{offset}",
+            "path": ep.activities_path(
+                limit=ACTIVITIES_PER_PAGE, start=offset,
+                start_date=start_date, end_date=end_date),
+        })
+    return specs
+
+
 def build_plan(profile: dict | None, last: str | None = None,
                pages: int = 1, today: str | None = None,
                limit: int = MAX_DAYS_PER_SYNC,
@@ -132,12 +169,12 @@ def build_plan(profile: dict | None, last: str | None = None,
     specs: list[dict] = []
 
     start0 = max(0, int(activity_start or 0))
-    for i in range(max(0, pages)):
-        start = start0 + i * ACTIVITIES_PER_PAGE
-        specs.append({
-            "label": f"activities::{start}",
-            "path": ep.ACTIVITIES.format(limit=ACTIVITIES_PER_PAGE, start=start),
-        })
+    # Incremental lists are clipped to the wellness window (plus tomorrow).
+    # History walks the global list by offset, so it must not inherit dates.
+    start_date = end_date = None
+    if not backfill_before:
+        start_date, end_date = activity_date_window(dates, today=today)
+    specs += activity_specs(start0, pages, start_date, end_date)
 
     for day in dates:
         specs += [
@@ -172,6 +209,8 @@ def build_plan(profile: dict | None, last: str | None = None,
         "days": dates,
         "specs": specs,
         "activity_start": start0,
+        "activity_start_date": start_date,
+        "activity_end_date": end_date,
         "complete": not dates and pages <= 0,
     }
 

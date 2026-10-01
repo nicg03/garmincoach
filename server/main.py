@@ -103,12 +103,18 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def _range(days: int | None, frm: str | None, to: str | None) -> tuple[str, str]:
-    """Resolve the requested window into a concrete (start, end) pair."""
-    end = to or date.today().isoformat()
+    """Resolve the requested window into a concrete (start, end) pair.
+
+    When `to` is omitted, the end is tomorrow so an activity whose local
+    calendar date is ahead of the server's UTC date still appears.
+    """
+    today = date.today()
+    end = to or (today + timedelta(days=1)).isoformat()
     if frm:
         return frm, end
     span = days or config.DEFAULT_WINDOW_DAYS
-    start = (date.fromisoformat(end) - timedelta(days=span - 1)).isoformat()
+    origin = today if to is None else date.fromisoformat(end)
+    start = (origin - timedelta(days=span - 1)).isoformat()
     return start, end
 
 
@@ -928,8 +934,9 @@ def sync_fetchplan(payload: dict[str, Any] = Body(...),
         else:
             last = None if payload.get("full") else info.get("last")
             plan = garmin_fetch.build_plan(
-                profile, last=last, pages=max(pages, 1), limit=limit,
-                activity_start=activity_start, include_meta=True)
+                profile, last=last,
+                pages=max(pages, garmin_fetch.INCREMENTAL_ACTIVITY_PAGES),
+                limit=limit, activity_start=activity_start, include_meta=True)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, 400)
     return plan

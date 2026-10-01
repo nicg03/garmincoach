@@ -29,6 +29,12 @@ def test_fetchplan_substitutes_profile_and_stays_root_relative():
     assert PROFILE["displayName"] in daily["path"]
     assert any("racepredictions" in s["path"] for s in plan["specs"])
     assert any(s["label"] == "activities::50" for s in plan["specs"])
+    recent = next(s for s in plan["specs"] if s["label"] == "activities::0")
+    assert "startDate=2026-09-08" in recent["path"]
+    assert "endDate=2026-09-13" in recent["path"]
+    assert "sortOrder=desc" in recent["path"]
+    assert plan["activity_start_date"] == "2026-09-08"
+    assert plan["activity_end_date"] == "2026-09-13"
 
 
 def test_regroup_and_normalise_drop_failed_endpoints():
@@ -113,6 +119,20 @@ def test_summarize_keeps_zones_and_splits():
     assert summary["vo2max"] == 54
     assert summary["hr_zones"][0]["secs"] == 600
     assert summary["splits"][0]["distance_m"] == 1000
+
+
+def test_summarize_falls_back_to_gmt_and_string_type():
+    summary = sm.summarize_activity({
+        "activityId": 8,
+        "activityName": "Gym",
+        "activityType": "strength_training",
+        "startTimeGMT": "2026-09-11T18:00:00.0",
+        "duration": 2400,
+    })
+    assert summary["id"] == 8
+    assert summary["type"] == "strength_training"
+    assert summary["start"].startswith("2026-09-11")
+    assert "18:00:00" in summary["start"]
 
 
 def _export_zip() -> bytes:
@@ -205,6 +225,10 @@ def test_backfill_plan_has_older_days_and_can_skip_meta():
     assert plan["days"][0] == "2026-08-13"
     assert any(s["label"] == "activities::50" for s in plan["specs"])
     assert any(s["label"] == "activities::100" for s in plan["specs"])
+    history = next(s for s in plan["specs"] if s["label"] == "activities::50")
+    assert "startDate=" not in history["path"]
+    assert "sortOrder=desc" in history["path"]
+    assert plan["activity_start_date"] is None
     assert not any(s["label"] == "hr_zones" for s in plan["specs"])
     empty = garmin_fetch.build_plan(
         PROFILE, today="2026-09-12", backfill_before="2015-01-01",
@@ -224,3 +248,25 @@ def test_upsert_day_merges_later_chunks(tmp_path):
         row = handle.days_between(user["id"], "2026-09-01", "2026-09-01")[0]
         assert row["steps"] == 8000
         assert row["sleep_score"] == 82
+
+
+def test_activity_without_start_local_is_still_queryable(tmp_path):
+    from server.store import open_store
+
+    activities, _days, _meta = ingest.normalise({"raw": {
+        "activities": [{
+            "activityId": 9,
+            "activityType": "running",
+            "startTimeGMT": "2026-09-12 06:00:00",
+            "duration": 1800.0,
+        }],
+        "days": [],
+    }})
+    assert activities[0]["start"].startswith("2026-09-12")
+    with open_store(tmp_path / "t.db") as handle:
+        user = handle.create_user("a@b.c", "hash")
+        handle.upsert_activity(user["id"], activities[0])
+        handle.commit()
+        rows = handle.activities_between(user["id"], "2026-09-12", "2026-09-12")
+        assert len(rows) == 1
+        assert rows[0]["id"] == 9

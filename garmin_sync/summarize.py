@@ -55,14 +55,52 @@ def _stat_block(values):
             "max": _round(max(nums), 1), "trend": downsample(nums)}
 
 
+def _activity_type(a: dict) -> str | None:
+    value = a.get("activityType")
+    if value is None:
+        value = a.get("sportType")
+    if isinstance(value, str):
+        return value.lower() or None
+    if isinstance(value, dict):
+        key = value.get("typeKey") or value.get("key") or value.get("name")
+        return key.lower() if isinstance(key, str) else None
+    return None
+
+
+def _format_start(value) -> str | None:
+    """A 'YYYY-MM-DD HH:MM:SS' string the site's date filters can compare."""
+    if isinstance(value, str) and len(value) >= 10 and value[4] == "-" and value[7] == "-":
+        cleaned = value.replace("T", " ", 1)
+        if len(cleaned) >= 19:
+            return cleaned[:19]
+        return cleaned[:10] + " 00:00:00"
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+        from datetime import datetime, timezone
+        seconds = value / 1000 if value > 1e11 else value
+        try:
+            return datetime.fromtimestamp(seconds, timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S")
+        except (OverflowError, OSError, ValueError):
+            return None
+    return None
+
+
+def _activity_start(a: dict) -> str | None:
+    for key in ("startTimeLocal", "startTimeGMT", "startTimeGmt", "beginTimestamp"):
+        formatted = _format_start(a.get(key))
+        if formatted:
+            return formatted
+    return None
+
+
 def summarize_activity(a: dict, full: bool = False) -> dict:
     if full:
         return a
     return {
         "id": a.get("activityId") or a.get("activity_id") or a.get("id"),
         "name": a.get("activityName"),
-        "type": _g(a, "activityType", "typeKey"),
-        "start": a.get("startTimeLocal"),
+        "type": _activity_type(a),
+        "start": _activity_start(a),
         "duration_s": _round(a.get("duration")),
         "distance_m": _round(a.get("distance")),
         "avg_hr": a.get("averageHR"),

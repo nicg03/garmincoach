@@ -25,6 +25,9 @@ class FakeClient:
         self.calls: list[str] = []
         self.sent: list[tuple] = []
         self.expired = False
+        self.block_activities = False
+        self.fail_activities_after: int | None = None
+        self.activity_calls = 0
 
     def dumps(self):
         return json.dumps({"di_token": self.di_token})
@@ -32,14 +35,22 @@ class FakeClient:
     def loads(self, tokens):
         self.di_token = json.loads(tokens)["di_token"]
 
-    def connectapi(self, path):
-        self.calls.append(path)
+    def connectapi(self, path, **kwargs):
+        from urllib.parse import urlencode
+        params = kwargs.get("params") or {}
+        query = path if not params else f"{path}?{urlencode(params)}"
+        self.calls.append(query)
         if self.expired:
             raise FakeError("API Error 401 - Unauthorized")
         if path == ep.PROFILE:
             return PROFILE
         if path.startswith("/activitylist-service"):
-            if "start=0" not in path:
+            self.activity_calls += 1
+            if self.block_activities or (
+                    self.fail_activities_after is not None
+                    and self.activity_calls > self.fail_activities_after):
+                raise FakeError("API Error 403 - Forbidden")
+            if "start=0" not in query:
                 return []
             return [{
                 "activityId": 42, "activityName": "Morning Run",
@@ -89,6 +100,7 @@ class FakeGarmin:
 def _client(tmp_path, monkeypatch, sync_inline=False):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "site.db")
     monkeypatch.setattr(garmin_connect, "REQUEST_PAUSE_SECONDS", 0)
+    monkeypatch.setattr(garmin_connect, "ACTIVITY_LIST_RETRIES", 0)
     monkeypatch.setattr(garmin_connect, "_garmin_class", lambda: FakeGarmin)
     FakeGarmin.shared = FakeClient()
     kicked: list[int] = []
@@ -228,3 +240,35 @@ def test_disconnect_and_account_delete_drop_tokens(tmp_path, monkeypatch):
     client.post("/api/account/delete", json={"confirm": "a@example.com"})
     with open_store(config.DB_PATH) as handle:
         assert handle.garmin_account(user["id"]) is None
+
+
+def test_activity_list_failure_keeps_days_and_retries(tmp_path, monkeypatch):
+    client, user, _ = _client(tmp_path, monkeypatch, sync_inline=True)
+    client.post("/api/garmin/connect",
+                json={"email": "me@garmin.test", "password": "pw"})
+    with open_store(config.DB_PATH) as handle:
+        before = handle.garmin_account(user["id"])["last_sync"]
+    assert before
+    FakeGarmin.shared.block_activities = True
+    result = garmin_connect.sync(user["id"])
+    assert result["activity_list_failed"] is True
+    assert result["days"] >= 1
+    info = client.get("/api/garmin").json()
+    assert info["last_error"]
+    assert "recent activities" in info["last_error"]
+    with open_store(config.DB_PATH) as handle:
+        after = handle.garmin_account(user["id"])
+    assert after["last_sync"] == before
+    assert garmin_connect.due_users() == [user["id"]]
+
+
+def test_history_does_not_mark_activities_done_on_list_failure(tmp_path, monkeypatch):
+    from server import garmin_fetch
+    client, user, _ = _client(tmp_path, monkeypatch)
+    client.post("/api/garmin/connect",
+                json={"email": "me@garmin.test", "password": "pw"})
+    FakeGarmin.shared.fail_activities_after = garmin_fetch.INCREMENTAL_ACTIVITY_PAGES
+    garmin_connect.sync(user["id"], history_rounds=1)
+    with open_store(config.DB_PATH) as handle:
+        backfill = handle.garmin_account(user["id"])["backfill"] or {}
+    assert backfill.get("activities_done") is not True

@@ -785,7 +785,7 @@ class Store:
 
     def garmin_connected_users(self) -> list[dict]:
         rows = self.conn.execute(
-            "SELECT user_id, last_sync, needs_login FROM garmin_accounts")
+            "SELECT user_id, last_sync, needs_login, last_error FROM garmin_accounts")
         return [dict(r) for r in rows]
 
     # ---- human coach / athlete links ---------------------------------------

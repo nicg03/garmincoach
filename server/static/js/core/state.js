@@ -47,7 +47,8 @@ export async function refreshStatus() {
   const previous = state.status;
   const status = await api('/api/status');
   state.status = status;
-  const signature = (s) => `${s.days}-${s.activities}-${s.first}-${s.last}`;
+  const g = (s) => s.garmin || {};
+  const signature = (s) => `${s.days}-${s.activities}-${s.first}-${s.last}-${g(s).last_sync || ''}-${g(s).last_error || ''}`;
   if (signature(previous) !== signature(status)) {
     invalidate('metrics', 'performance', 'plan', 'decide', 'activities');
     emit('data', status);

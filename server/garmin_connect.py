@@ -26,6 +26,7 @@ import secrets
 import threading
 import time
 from typing import Any
+from urllib.parse import parse_qsl
 
 from garmin_sync import endpoints as ep
 from garmin_sync import garmin_workout
@@ -37,6 +38,10 @@ MFA_TTL_SECONDS = 300
 # Politeness towards Garmin, as in the extension: a sync is a couple of
 # hundred small requests and they go one after another with a short gap.
 REQUEST_PAUSE_SECONDS = 0.15
+ACTIVITY_LIST_RETRIES = 3
+ACTIVITY_LIST_RETRY_STATUSES = {403, 429, 500, 502, 503, 504}
+ACTIVITY_LIST_FAILED_MSG = (
+    "Garmin didn't return your recent activities. The next sync will retry.")
 
 # Specs per ingest, so a long sync stores as it goes.
 CHUNK_SIZE = 24
@@ -129,6 +134,18 @@ def _status_of(error: Exception) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _split_query(path: str) -> tuple[str, dict[str, str]]:
+    """Separate a gc-api path from its query string for garminconnect/garth."""
+    if "?" not in path:
+        return path, {}
+    path_only, query = path.split("?", 1)
+    return path_only, {k: v for k, v in parse_qsl(query, keep_blank_values=True)}
+
+
+def _is_activity_list(path: str) -> bool:
+    return path.startswith("/activitylist-service/")
+
+
 class Session:
     """A signed-in Garmin client, answering like the extension's content
     script does: JSON on success, an `__error` marker on a failed endpoint,
@@ -162,13 +179,32 @@ class Session:
                 "pick up where this one stopped.") from error
         return {"__error": status or "fetch-failed", "__detail": str(error)[:200]}
 
+    def _retryable(self, error: Exception) -> bool:
+        status = _status_of(error)
+        name = type(error).__name__
+        return (status in ACTIVITY_LIST_RETRY_STATUSES
+                or name == "GarminConnectTooManyRequestsError")
+
     def get(self, path: str) -> Any:
-        try:
-            return self.client.connectapi(path)
-        except Exception as e:  # noqa: BLE001
-            return self._guard(e)
-        finally:
-            time.sleep(REQUEST_PAUSE_SECONDS)
+        path_only, params = _split_query(path)
+        retries = ACTIVITY_LIST_RETRIES if _is_activity_list(path_only) else 0
+        last_error: Exception | None = None
+        for attempt in range(retries + 1):
+            try:
+                kwargs = {"params": params} if params else {}
+                result = self.client.connectapi(path_only, **kwargs)
+                if result is None and _is_activity_list(path_only):
+                    return []
+                return result
+            except Exception as e:  # noqa: BLE001
+                last_error = e
+                if _is_activity_list(path_only) and attempt < retries and self._retryable(e):
+                    time.sleep(REQUEST_PAUSE_SECONDS * (attempt + 2))
+                    continue
+                return self._guard(e)
+            finally:
+                time.sleep(REQUEST_PAUSE_SECONDS)
+        return self._guard(last_error) if last_error else {"__error": "fetch-failed"}
 
     def send(self, method: str, path: str, body: Any) -> dict:
         kwargs = {} if body is None else {"json": body}
@@ -302,13 +338,33 @@ def _activity_count(results: dict) -> int:
                if k.startswith("activities::"))
 
 
+def _activity_list_failed(results: dict) -> bool:
+    return any(k.startswith("activities::") and isinstance(v, dict) and "__error" in v
+               for k, v in results.items())
+
+
+def _empty_totals() -> dict:
+    return {"activities": 0, "days": 0, "failures": 0, "fetched_activities": 0,
+            "activity_list_failed": False}
+
+
+def _add_totals(into: dict, extra: dict) -> dict:
+    into["activity_list_failed"] = bool(
+        into.get("activity_list_failed") or extra.get("activity_list_failed"))
+    for key in ("activities", "days", "failures", "fetched_activities"):
+        into[key] = into.get(key, 0) + extra.get(key, 0)
+    return into
+
+
 def _fetch_and_store(user_id: int, session: Session, specs: list[dict]) -> dict:
-    totals = {"activities": 0, "days": 0, "failures": 0, "fetched_activities": 0}
+    totals = _empty_totals()
     for chunk in _chunks(specs):
         results = {spec["label"]: session.get(spec["path"]) for spec in chunk}
         totals["failures"] += sum(
             1 for v in results.values() if isinstance(v, dict) and "__error" in v)
         totals["fetched_activities"] += _activity_count(results)
+        totals["activity_list_failed"] = (
+            totals["activity_list_failed"] or _activity_list_failed(results))
         activities, days, meta = ingest.normalise(
             {"raw": garmin_fetch.regroup(results)})
         stored = db.ingest(user_id, activities, days, meta)
@@ -326,10 +382,28 @@ def _profile(session: Session) -> dict:
 
 def _incremental(user_id: int, session: Session, profile: dict) -> dict:
     last = db.status(user_id).get("last")
+    pages = garmin_fetch.INCREMENTAL_ACTIVITY_PAGES
     plan = garmin_fetch.build_plan(
-        profile, last=last, pages=1 if last else 2,
+        profile, last=last, pages=pages,
         limit=garmin_fetch.MAX_DAYS_PER_SYNC if last else garmin_fetch.FIRST_RUN_DAYS)
-    return _fetch_and_store(user_id, session, plan["specs"])
+    totals = _fetch_and_store(user_id, session, plan["specs"])
+    page_size = garmin_fetch.ACTIVITIES_PER_PAGE
+    extra = 0
+    offset = plan["activity_start"] + pages * page_size
+    while (not totals["activity_list_failed"]
+           and totals["fetched_activities"] >= (pages + extra) * page_size
+           and extra < garmin_fetch.EXTRA_ACTIVITY_PAGES):
+        more = garmin_fetch.activity_specs(
+            offset, 1,
+            start_date=plan.get("activity_start_date"),
+            end_date=plan.get("activity_end_date"))
+        got = _fetch_and_store(user_id, session, more)
+        _add_totals(totals, got)
+        extra += 1
+        offset += page_size
+        if got["activity_list_failed"] or got["fetched_activities"] < page_size:
+            break
+    return totals
 
 
 def _history(user_id: int, session: Session, profile: dict,
@@ -357,7 +431,11 @@ def _history(user_id: int, session: Session, profile: dict,
         added["activities"] += got["activities"]
         added["days"] += got["days"]
         if pages:
-            if got["fetched_activities"] < pages * garmin_fetch.ACTIVITIES_PER_PAGE:
+            if got.get("activity_list_failed"):
+                # Same offset next round; a short page caused by errors is not
+                # the end of the list.
+                pass
+            elif got["fetched_activities"] < pages * garmin_fetch.ACTIVITIES_PER_PAGE:
                 cursor["activities_done"] = True
             else:
                 cursor["activity_start"] += got["fetched_activities"]
@@ -437,20 +515,27 @@ def sync(user_id: int, history_rounds: int = HISTORY_ROUNDS_TICK) -> dict:
                     handle.update_garmin_account(user_id, tokens=encrypt(fresh))
 
         result["seconds"] = round(time.time() - started, 1)
+        list_failed = bool(result.get("activity_list_failed"))
         with db.store() as handle:
-            handle.update_garmin_account(
-                user_id, last_sync=time.time(), last_result=result,
-                last_error=None, backfill=backfill)
-            handle.set_meta(user_id, "last_ingest", {
-                "at": time.strftime("%Y-%m-%d"),
-                "source": "garmin",
-                "stored": {"activities": result["activities"], "days": result["days"]},
-                "failures": result["failures"],
-            })
+            fields = {"last_result": result, "backfill": backfill}
+            if list_failed:
+                fields["last_error"] = ACTIVITY_LIST_FAILED_MSG
+            else:
+                fields["last_sync"] = time.time()
+                fields["last_error"] = None
+            handle.update_garmin_account(user_id, **fields)
+            if not list_failed:
+                handle.set_meta(user_id, "last_ingest", {
+                    "at": time.strftime("%Y-%m-%d"),
+                    "source": "garmin",
+                    "stored": {"activities": result["activities"],
+                               "days": result["days"]},
+                    "failures": result["failures"],
+                })
             handle.commit()
         _log(f"sync user={user_id} +{result['activities']} activities "
              f"+{result['days']} days failures={result['failures']} "
-             f"in {result['seconds']}s")
+             f"list_failed={list_failed} in {result['seconds']}s")
         return result
     finally:
         _running.discard(user_id)
@@ -471,8 +556,10 @@ def _safe_sync(user_id: int, history_rounds: int) -> None:
 
 def kick(user_id: int, history_rounds: int = HISTORY_ROUNDS_TICK) -> bool:
     """Start a sync in the background. False if one is already running."""
-    if user_id in _running:
-        return False
+    with _locks_guard:
+        if user_id in _running:
+            return False
+        _running.add(user_id)
     threading.Thread(target=_safe_sync, args=(user_id, history_rounds),
                      daemon=True, name=f"garmin-sync-{user_id}").start()
     return True
@@ -484,7 +571,8 @@ def refresh_if_stale(user_id: int) -> None:
         account = handle.garmin_account(user_id)
     if not account or account["needs_login"]:
         return
-    if time.time() - (account["last_sync"] or 0) > STALE_ON_OPEN_SECONDS:
+    if account.get("last_error") or (
+            time.time() - (account["last_sync"] or 0) > STALE_ON_OPEN_SECONDS):
         kick(user_id)
 
 
@@ -494,7 +582,9 @@ def due_users(now: float | None = None) -> list[int]:
     with db.store() as handle:
         rows = handle.garmin_connected_users()
     return [r["user_id"] for r in rows
-            if not r["needs_login"] and now - (r["last_sync"] or 0) >= interval]
+            if not r["needs_login"] and (
+                r.get("last_error")
+                or now - (r["last_sync"] or 0) >= interval)]
 
 
 async def scheduler() -> None:
