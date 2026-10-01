@@ -30,11 +30,11 @@ def test_fetchplan_substitutes_profile_and_stays_root_relative():
     assert any("racepredictions" in s["path"] for s in plan["specs"])
     assert any(s["label"] == "activities::50" for s in plan["specs"])
     recent = next(s for s in plan["specs"] if s["label"] == "activities::0")
-    assert "startDate=2026-09-08" in recent["path"]
-    assert "endDate=2026-09-13" in recent["path"]
-    assert "sortOrder=desc" in recent["path"]
-    assert plan["activity_start_date"] == "2026-09-08"
-    assert plan["activity_end_date"] == "2026-09-13"
+    assert "startDate=2026-07-30" in recent["path"]
+    assert "endDate=2026-09-12" in recent["path"]
+    assert "sortOrder=" not in recent["path"]
+    assert plan["activity_start_date"] == "2026-07-30"
+    assert plan["activity_end_date"] == "2026-09-12"
 
 
 def test_regroup_and_normalise_drop_failed_endpoints():
@@ -204,6 +204,18 @@ def test_local_push_still_accepted_as_summaries():
     assert meta == {}
 
 
+def test_incremental_activity_lookback_ignores_wellness_last():
+    plan = garmin_fetch.build_plan(
+        PROFILE, last="2026-09-12", today="2026-09-12", pages=1, limit=5)
+    assert plan["days"] == ["2026-09-12"]
+    recent = next(s for s in plan["specs"] if s["label"] == "activities::0")
+    assert "startDate=2026-08-30" in recent["path"]
+    assert "endDate=2026-09-12" in recent["path"]
+    assert "sortOrder=" not in recent["path"]
+    assert plan["activity_start_date"] == "2026-08-30"
+    assert plan["activity_end_date"] == "2026-09-12"
+
+
 def test_days_to_fetch_refetches_last_day():
     days = garmin_fetch.days_to_fetch("2026-09-10", today="2026-09-12")
     assert days[0] == "2026-09-12"
@@ -227,7 +239,7 @@ def test_backfill_plan_has_older_days_and_can_skip_meta():
     assert any(s["label"] == "activities::100" for s in plan["specs"])
     history = next(s for s in plan["specs"] if s["label"] == "activities::50")
     assert "startDate=" not in history["path"]
-    assert "sortOrder=desc" in history["path"]
+    assert "sortOrder=" not in history["path"]
     assert plan["activity_start_date"] is None
     assert not any(s["label"] == "hr_zones" for s in plan["specs"])
     empty = garmin_fetch.build_plan(

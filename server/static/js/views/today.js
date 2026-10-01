@@ -148,7 +148,9 @@ export async function render(root) {
     <div class="card"><div class="card-head"><h2>Recent activities</h2>
         <a class="btn-link" href="#/insights/activities">All activities</a></div>
       <div class="scroll"><table>${ACTIVITY_HEAD}<tbody>${activityRows(recent, 5) ||
-        '<tr><td colspan="7">Nothing here yet.</td></tr>'}</tbody></table></div>
+        `<tr><td colspan="7">${status.days
+          ? 'Nessuna attività recente — sincronizza'
+          : 'Nothing here yet.'}</td></tr>`}</tbody></table></div>
     </div>`;
 
   $$('[data-act]', root).forEach((button) => {

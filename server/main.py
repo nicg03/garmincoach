@@ -458,14 +458,23 @@ def delete_account(response: Response, confirm: str = Body("", embed=True),
 def status(user: dict = Depends(security.current_user)):
     info = db.status(user["id"])
     last = info.get("last")
+    today = date.today()
     if last:
-        gap = (date.today() - date.fromisoformat(last)).days
+        gap = (today - date.fromisoformat(last)).days
         info["ago"] = "today" if gap == 0 else ("yesterday" if gap == 1
                                                 else f"{gap} days ago")
         info["stale"] = gap > 2
     else:
         info["ago"] = ""
         info["stale"] = True
+    last_activity = info.get("last_activity")
+    if last_activity:
+        try:
+            act_gap = (today - date.fromisoformat(last_activity)).days
+        except ValueError:
+            act_gap = 0
+        if act_gap > 2:
+            info["stale"] = True
     info["coach"] = config.coach_enabled()
     info["coach_limit"] = config.COACH_DAILY_LIMIT
     info["coach_used"] = (db.coach_calls_today(user["id"])

@@ -493,6 +493,13 @@ class Store:
                                 (user_id,)).fetchone()
         return row["d"] if row and row["d"] else None
 
+    def last_activity(self, user_id: int) -> str | None:
+        row = self.conn.execute(
+            "SELECT MAX(substr(start, 1, 10)) d FROM activities "
+            "WHERE user_id = ? AND start IS NOT NULL AND start != ''",
+            (user_id,)).fetchone()
+        return row["d"] if row and row["d"] else None
+
     def first_day(self, user_id: int) -> str | None:
         row = self.conn.execute("SELECT MIN(date) d FROM days WHERE user_id = ?",
                                 (user_id,)).fetchone()
@@ -785,8 +792,19 @@ class Store:
 
     def garmin_connected_users(self) -> list[dict]:
         rows = self.conn.execute(
-            "SELECT user_id, last_sync, needs_login, last_error FROM garmin_accounts")
-        return [dict(r) for r in rows]
+            "SELECT user_id, last_sync, needs_login, last_error, last_result "
+            "FROM garmin_accounts")
+        out = []
+        for row in rows:
+            account = dict(row)
+            try:
+                account["last_result"] = (
+                    json.loads(account["last_result"]) if account["last_result"]
+                    else None)
+            except json.JSONDecodeError:
+                account["last_result"] = None
+            out.append(account)
+        return out
 
     # ---- human coach / athlete links ---------------------------------------
     def _link_from_row(self, row) -> dict | None:

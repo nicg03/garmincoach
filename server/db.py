@@ -57,6 +57,7 @@ def status(user_id: int) -> dict:
         return {
             "last": handle.last_day(user_id),
             "first": handle.first_day(user_id),
+            "last_activity": handle.last_activity(user_id),
             "last_ingest": last_ingest if isinstance(last_ingest, dict) else None,
             **handle.counts(user_id),
         }

@@ -163,6 +163,7 @@ def test_sync_fetches_stores_and_walks_history(tmp_path, monkeypatch):
     client.post("/api/garmin/connect", json={"email": "me@garmin.test", "password": "pw"})
     status = client.get("/api/status").json()
     assert status["activities"] == 1
+    assert status["last_activity"] == TODAY
     assert status["days"] >= 1
     assert status["garmin"]["last_error"] is None
     assert status["garmin"]["last_result"]["failures"] > 0  # hrv 404s are tolerated
@@ -259,7 +260,14 @@ def test_activity_list_failure_keeps_days_and_retries(tmp_path, monkeypatch):
     with open_store(config.DB_PATH) as handle:
         after = handle.garmin_account(user["id"])
     assert after["last_sync"] == before
-    assert garmin_connect.due_users() == [user["id"]]
+    assert garmin_connect.due_users() == []
+    later = garmin_connect.time.time() + garmin_connect.ERROR_BACKOFF_SECONDS + 1
+    assert garmin_connect.due_users(later) == [user["id"]]
+    garmin_connect.sync(user["id"])
+    assert garmin_connect.due_users(later) == []
+    much_later = (garmin_connect.time.time()
+                  + garmin_connect.ERROR_BACKOFF_LONG_SECONDS + 1)
+    assert garmin_connect.due_users(much_later) == [user["id"]]
 
 
 def test_history_does_not_mark_activities_done_on_list_failure(tmp_path, monkeypatch):

@@ -43,6 +43,10 @@ ACTIVITY_LIST_RETRY_STATUSES = {403, 429, 500, 502, 503, 504}
 ACTIVITY_LIST_FAILED_MSG = (
     "Garmin didn't return your recent activities. The next sync will retry.")
 
+# Don't hammer Garmin when the activity list keeps failing.
+ERROR_BACKOFF_SECONDS = 15 * 60
+ERROR_BACKOFF_LONG_SECONDS = 60 * 60
+
 # Specs per ingest, so a long sync stores as it goes.
 CHUNK_SIZE = 24
 
@@ -345,7 +349,24 @@ def _activity_list_failed(results: dict) -> bool:
 
 def _empty_totals() -> dict:
     return {"activities": 0, "days": 0, "failures": 0, "fetched_activities": 0,
-            "activity_list_failed": False}
+            "activity_list_failed": False, "activity_from": None,
+            "activity_to": None}
+
+
+def _activity_span(results: dict) -> tuple[str | None, str | None]:
+    dates: list[str] = []
+    for key, value in results.items():
+        if not key.startswith("activities::"):
+            continue
+        for item in garmin_fetch._activity_items(value):
+            start = (item.get("startTimeLocal") or item.get("startTimeGMT")
+                     or item.get("startTimeGmt") or "")
+            day = start[:10] if isinstance(start, str) else ""
+            if len(day) == 10 and day[4] == "-":
+                dates.append(day)
+    if not dates:
+        return None, None
+    return min(dates), max(dates)
 
 
 def _add_totals(into: dict, extra: dict) -> dict:
@@ -353,6 +374,17 @@ def _add_totals(into: dict, extra: dict) -> dict:
         into.get("activity_list_failed") or extra.get("activity_list_failed"))
     for key in ("activities", "days", "failures", "fetched_activities"):
         into[key] = into.get(key, 0) + extra.get(key, 0)
+    for key in ("activity_from", "activity_to"):
+        value = extra.get(key)
+        if not value:
+            continue
+        current = into.get(key)
+        if current is None:
+            into[key] = value
+        elif key == "activity_from":
+            into[key] = min(current, value)
+        else:
+            into[key] = max(current, value)
     return into
 
 
@@ -365,6 +397,14 @@ def _fetch_and_store(user_id: int, session: Session, specs: list[dict]) -> dict:
         totals["fetched_activities"] += _activity_count(results)
         totals["activity_list_failed"] = (
             totals["activity_list_failed"] or _activity_list_failed(results))
+        span_from, span_to = _activity_span(results)
+        if span_from:
+            totals["activity_from"] = (
+                span_from if not totals["activity_from"]
+                else min(totals["activity_from"], span_from))
+            totals["activity_to"] = (
+                span_to if not totals["activity_to"]
+                else max(totals["activity_to"], span_to))
         activities, days, meta = ingest.normalise(
             {"raw": garmin_fetch.regroup(results)})
         stored = db.ingest(user_id, activities, days, meta)
@@ -403,6 +443,10 @@ def _incremental(user_id: int, session: Session, profile: dict) -> dict:
         offset += page_size
         if got["activity_list_failed"] or got["fetched_activities"] < page_size:
             break
+    _log(f"incremental user={user_id} fetched={totals['fetched_activities']} "
+         f"window={plan.get('activity_start_date')}..{plan.get('activity_end_date')} "
+         f"span={totals.get('activity_from')}..{totals.get('activity_to')} "
+         f"list_failed={totals['activity_list_failed']}")
     return totals
 
 
@@ -515,7 +559,11 @@ def sync(user_id: int, history_rounds: int = HISTORY_ROUNDS_TICK) -> dict:
                     handle.update_garmin_account(user_id, tokens=encrypt(fresh))
 
         result["seconds"] = round(time.time() - started, 1)
+        result["attempted_at"] = time.time()
         list_failed = bool(result.get("activity_list_failed"))
+        prev = account.get("last_result") or {}
+        result["error_retries"] = (
+            int(prev.get("error_retries") or 0) + 1 if list_failed else 0)
         with db.store() as handle:
             fields = {"last_result": result, "backfill": backfill}
             if list_failed:
@@ -535,6 +583,8 @@ def sync(user_id: int, history_rounds: int = HISTORY_ROUNDS_TICK) -> dict:
             handle.commit()
         _log(f"sync user={user_id} +{result['activities']} activities "
              f"+{result['days']} days failures={result['failures']} "
+             f"fetched={result.get('fetched_activities')} "
+             f"span={result.get('activity_from')}..{result.get('activity_to')} "
              f"list_failed={list_failed} in {result['seconds']}s")
         return result
     finally:
@@ -565,14 +615,27 @@ def kick(user_id: int, history_rounds: int = HISTORY_ROUNDS_TICK) -> bool:
     return True
 
 
+def _ready_after_error(account: dict, now: float) -> bool:
+    """Whether enough time has passed to retry a failed activity list."""
+    result = account.get("last_result") or {}
+    attempted = result.get("attempted_at") or 0
+    retries = int(result.get("error_retries") or 0)
+    gap = ERROR_BACKOFF_LONG_SECONDS if retries >= 2 else ERROR_BACKOFF_SECONDS
+    return now - attempted >= gap
+
+
 def refresh_if_stale(user_id: int) -> None:
     """Called when someone opens the site: an hour-old sync gets redone."""
     with db.store() as handle:
         account = handle.garmin_account(user_id)
     if not account or account["needs_login"]:
         return
-    if account.get("last_error") or (
-            time.time() - (account["last_sync"] or 0) > STALE_ON_OPEN_SECONDS):
+    now = time.time()
+    if account.get("last_error"):
+        if _ready_after_error(account, now):
+            kick(user_id)
+        return
+    if now - (account["last_sync"] or 0) > STALE_ON_OPEN_SECONDS:
         kick(user_id)
 
 
@@ -581,10 +644,17 @@ def due_users(now: float | None = None) -> list[int]:
     interval = config.GARMIN_SYNC_HOURS * 3600
     with db.store() as handle:
         rows = handle.garmin_connected_users()
-    return [r["user_id"] for r in rows
-            if not r["needs_login"] and (
-                r.get("last_error")
-                or now - (r["last_sync"] or 0) >= interval)]
+    due = []
+    for row in rows:
+        if row["needs_login"]:
+            continue
+        if row.get("last_error"):
+            if _ready_after_error(row, now):
+                due.append(row["user_id"])
+            continue
+        if now - (row["last_sync"] or 0) >= interval:
+            due.append(row["user_id"])
+    return due
 
 
 async def scheduler() -> None:

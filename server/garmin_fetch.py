@@ -50,6 +50,11 @@ ACTIVITIES_PER_PAGE = 50
 INCREMENTAL_ACTIVITY_PAGES = 3
 EXTRA_ACTIVITY_PAGES = 10
 
+# Activity list lookback is independent of wellness `last`. If days are already
+# filled through today, a window of "today only" would never recover a run
+# from yesterday that failed to store.
+ACTIVITY_LOOKBACK_DAYS = 14
+
 DAY_LABELS = ("daily", "sleep", "hrv", "readiness")
 
 
@@ -112,19 +117,21 @@ def days_before(before: str, limit: int, today: str | None = None) -> list[str]:
             for i in range((end - start).days + 1)]
 
 
-def activity_date_window(dates: list[str], today: str | None = None
+def activity_date_window(today: str | None = None, last: str | None = None
                          ) -> tuple[str, str]:
     """Garmin startDate/endDate for an incremental activity list.
 
-    `dates` is newest-first. `endDate` is tomorrow so an activity whose local
-    calendar date is ahead of the server's UTC date is not clipped.
+    Independent of which wellness days this run fetches. `endDate` is today
+    (not tomorrow) so Garmin is not asked for a future calendar date.
+    First run looks back `MAX_DAYS_PER_SYNC`; later runs use
+    `ACTIVITY_LOOKBACK_DAYS`.
     """
     today_d = date.fromisoformat(today) if today else date.today()
-    end = today_d + timedelta(days=1)
-    start = date.fromisoformat(dates[-1]) if dates else today_d
-    if start > end:
-        start = today_d
-    return start.isoformat(), end.isoformat()
+    span = MAX_DAYS_PER_SYNC if last is None else ACTIVITY_LOOKBACK_DAYS
+    start = today_d - timedelta(days=span - 1)
+    if start < HISTORY_FLOOR:
+        start = HISTORY_FLOOR
+    return start.isoformat(), today_d.isoformat()
 
 
 def activity_specs(start: int, pages: int,
@@ -169,11 +176,11 @@ def build_plan(profile: dict | None, last: str | None = None,
     specs: list[dict] = []
 
     start0 = max(0, int(activity_start or 0))
-    # Incremental lists are clipped to the wellness window (plus tomorrow).
-    # History walks the global list by offset, so it must not inherit dates.
+    # Incremental activity lists use a fixed lookback, not the wellness
+    # window. History walks the global list by offset, so no dates there.
     start_date = end_date = None
     if not backfill_before:
-        start_date, end_date = activity_date_window(dates, today=today)
+        start_date, end_date = activity_date_window(today=today, last=last)
     specs += activity_specs(start0, pages, start_date, end_date)
 
     for day in dates:

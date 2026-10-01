@@ -24,9 +24,11 @@ ACTIVITIES = "/activitylist-service/activities/search/activities"
 
 def activities_path(limit: int, start: int = 0,
                     start_date: str | None = None,
-                    end_date: str | None = None,
-                    sort_order: str = "desc") -> str:
-    """Activity-list URL newest-first, optionally clipped to a date window."""
+                    end_date: str | None = None) -> str:
+    """Activity-list URL newest-first, optionally clipped to a date window.
+
+    Garmin's default order is newest first; do not send `sortOrder`.
+    """
     params: list[tuple[str, str]] = [
         ("limit", str(limit)),
         ("start", str(start)),
@@ -35,8 +37,6 @@ def activities_path(limit: int, start: int = 0,
         params.append(("startDate", start_date))
     if end_date:
         params.append(("endDate", end_date))
-    if sort_order:
-        params.append(("sortOrder", sort_order))
     return f"{ACTIVITIES}?{urlencode(params)}"
 
 

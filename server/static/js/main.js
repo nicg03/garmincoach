@@ -80,6 +80,8 @@ function renderPill() {
     tone = 'busy'; text = 'Syncing…';
   } else if (g.connected && g.needs_login) {
     tone = 'bad'; text = 'Reconnect Garmin';
+  } else if (g.connected && g.last_error) {
+    tone = 'warn'; text = 'Sync problem';
   } else if (g.connected && g.last_sync) {
     tone = Date.now() / 1000 - g.last_sync > 86400 ? 'warn' : 'ok';
     text = `Synced ${agoFromEpoch(g.last_sync)}`;
@@ -139,7 +141,7 @@ let pollTimer = null;
 
 function pollDelay() {
   const g = state.status.garmin || {};
-  if (g.running || !hasData()) return 4000;
+  if (g.running || g.last_error || !hasData()) return 4000;
   return 60000;
 }
 

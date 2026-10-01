@@ -82,7 +82,9 @@ async function fetchOne(url, requestHeaders) {
           return { __error: "non-json" };
         }
       }
-      if (RETRY_STATUSES.has(response.status) && attempt < 3) {
+      const activityList = url.includes("/activitylist-service/");
+      if ((RETRY_STATUSES.has(response.status)
+          || (response.status === 403 && activityList)) && attempt < 3) {
         await sleep(1500 * (attempt + 1));
         continue;
       }
