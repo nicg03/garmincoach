@@ -1,8 +1,9 @@
 /* The headline numbers, split into Load and Recovery so Form is not sitting
    next to Sleep with no context. Shared by Today, Insights and an athlete page. */
+import { openActivity } from './activity-detail.js';
 import { info } from '../core/glossary.js';
 import { t } from '../core/i18n.js';
-import { esc, fmt, signed, tile } from '../core/ui.js';
+import { $$, esc, fmt, signed, tile } from '../core/ui.js';
 
 export function formTone(form) {
   if (form === null || form === undefined) return ['', ''];
@@ -65,9 +66,14 @@ export function activityRows(activities, limit = 0) {
   const list = limit ? activities.slice(0, limit) : activities;
   return list.map((a) => {
     const km = a.distance_m ? a.distance_m / 1000 : null;
-    return `<tr>
+    const label = a.name || a.type || '';
+    const openable = a.id != null && a.id !== '';
+    const attrs = openable
+      ? ` class="clickable" data-id="${esc(a.id)}" tabindex="0" role="button" aria-label="${esc(label)}"`
+      : '';
+    return `<tr${attrs}>
       <td>${(a.start || '').slice(0, 10)}</td>
-      <td>${esc(a.name || a.type || '')}</td>
+      <td>${esc(label)}</td>
       <td>${esc((a.type || '').replace(/_/g, ' '))}</td>
       <td>${a.duration_s ? Math.round(a.duration_s / 60) + "'" : '--'}</td>
       <td>${km ? fmt(km, 1) : '--'}</td>
@@ -75,6 +81,23 @@ export function activityRows(activities, limit = 0) {
       <td>${fmt(a.training_load)}</td>
     </tr>`;
   }).join('');
+}
+
+export function bindActivityList(root, activities) {
+  const byId = new Map((activities || []).map((a) => [String(a.id), a]));
+  $$('tr[data-id]', root).forEach((row) => {
+    const open = () => {
+      const activity = byId.get(row.dataset.id);
+      if (activity) openActivity(activity, row);
+    };
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        open();
+      }
+    });
+  });
 }
 
 export function activityHead() {

@@ -280,6 +280,28 @@ tr.clickable { cursor: pointer; }
 }
 .modal h2 { font-size: 17px; margin-bottom: 8px; }
 .modal .row-actions { justify-content: flex-end; margin-top: 18px; }
+.modal.activity-detail {
+  max-width: 640px;
+  max-height: min(86vh, 820px);
+  overflow: auto;
+}
+.activity-detail h2 { font-size: 22px; letter-spacing: -.03em; margin: 0 0 4px; }
+.activity-detail .activity-when { margin: 0 0 14px; }
+.activity-detail .cards { margin-bottom: 4px; }
+.activity-detail .cards .stat { padding: 12px 14px 10px; }
+.activity-detail .cards .stat .value { font-size: 22px; }
+.activity-detail .rows { margin: 8px 0 4px; }
+.activity-detail h3 {
+  font-size: 13px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted); margin: 18px 0 8px;
+}
+.zone-list { display: grid; gap: 8px; }
+.zone-row {
+  display: grid; grid-template-columns: 36px 1fr auto; gap: 10px;
+  align-items: center; font-size: 13px; font-variant-numeric: tabular-nums;
+}
+.zone-bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.zone-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
 
 .skeleton {
   border-radius: var(--radius-sm);

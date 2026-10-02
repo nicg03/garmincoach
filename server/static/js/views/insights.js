@@ -1,7 +1,7 @@
 /* Insights: the numbers behind Today, grouped by question. How hard have I
    been training (Load), am I absorbing it (Recovery), am I getting faster
    (Performance), and what did I actually do (Activities). */
-import { activityHead, activityRows, loadTiles } from '../components/headline.js';
+import { activityHead, activityRows, bindActivityList, loadTiles } from '../components/headline.js';
 import { api, scoped } from '../core/api.js';
 import { showText } from '../core/copy.js';
 import { COLORS, PALETTE, axes, baseOptions, draw } from '../core/charts.js';
@@ -288,6 +288,7 @@ async function activities(host, opts) {
       && (!needle || (a.name || '').toLowerCase().includes(needle)));
     $('[data-rows]', host).innerHTML = activityRows(shown) || `<tr><td colspan="7">${esc(t('ins.noMatch'))}</td></tr>`;
     $('[data-count]', host).textContent = `${shown.length}`;
+    bindActivityList(host, shown);
   };
   q.addEventListener('input', paint);
   sport.addEventListener('change', paint);

@@ -1,6 +1,6 @@
 /* Today: am I ready, what's the session, and what changed. Everything else
    is one click away. */
-import { activityHead, activityRows, groupedHeadline } from '../components/headline.js';
+import { activityHead, activityRows, bindActivityList, groupedHeadline } from '../components/headline.js';
 import { api, post } from '../core/api.js';
 import { showText } from '../core/copy.js';
 import { info } from '../core/glossary.js';
@@ -167,6 +167,8 @@ export async function render(root) {
           ? esc(t('today.noActivities'))
           : esc(t('today.empty'))}</td></tr>`}</tbody></table></div>
     </div>`;
+
+  bindActivityList(root, recent.slice(0, 5));
 
   $$('[data-act]', root).forEach((button) => {
     button.addEventListener('click', () => busy(button, '…', async () => {
