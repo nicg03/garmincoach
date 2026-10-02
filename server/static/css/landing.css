@@ -11,8 +11,8 @@ html:has(.gate.landing:not(.hidden)) {
   scroll-behavior: smooth;
 }
 
-html:has(.gate.landing.is-auth),
-html:has(.gate.landing.landing-auth) {
+html:has(.gate.landing.is-auth:not(.hidden)),
+html:has(.gate.landing.landing-auth:not(.hidden)) {
   overflow: hidden;
 }
 

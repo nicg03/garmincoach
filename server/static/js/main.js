@@ -336,6 +336,7 @@ async function boot() {
     return;
   }
   $('#gate').classList.add('hidden');
+  $('#gate').classList.remove('is-auth', 'landing-auth');
   $('#shell').classList.remove('hidden');
   initCharts();
   renderPill();
