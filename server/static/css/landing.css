@@ -1,0 +1,357 @@
+/* Public marketing page shown before sign-in. The login card is a modal. */
+
+.gate.landing {
+  display: block;
+  min-height: 100vh;
+  padding: 0;
+  place-items: unset;
+}
+
+html:has(.gate.landing:not(.hidden)) {
+  scroll-behavior: smooth;
+}
+
+html:has(.gate.landing.is-auth),
+html:has(.gate.landing.landing-auth) {
+  overflow: hidden;
+}
+
+.landing-bar,
+.landing-hero,
+.landing-section,
+.landing-foot {
+  scroll-margin-top: 72px;
+}
+
+/* ---- header ------------------------------------------------------------- */
+.landing-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+
+.landing-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 56px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.landing-nav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.landing-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.landing-nav a:hover { color: var(--ink); }
+
+.landing-bar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.landing-bar-actions .ghost { background: var(--card); }
+
+/* ---- hero --------------------------------------------------------------- */
+.landing-hero {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 72px 28px 36px;
+}
+
+.landing-hero h1 {
+  font-size: clamp(36px, 5.4vw, 56px);
+  line-height: 1.05;
+  letter-spacing: -.045em;
+  font-weight: 600;
+  margin: 0 0 12px;
+  max-width: 14ch;
+}
+
+.landing-hero > p {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.45;
+  margin: 0 0 24px;
+  max-width: 36em;
+}
+
+.landing-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ---- shared section chrome ---------------------------------------------- */
+.landing-section {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 16px 28px 64px;
+}
+
+.landing-kicker {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.landing-section h2 {
+  font-size: clamp(24px, 3vw, 32px);
+  letter-spacing: -.03em;
+  line-height: 1.15;
+  margin: 0 0 10px;
+  max-width: 22ch;
+}
+
+.landing-lede {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 16px;
+  max-width: 40em;
+}
+
+.landing-note {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 46em;
+}
+
+/* ---- product preview ---------------------------------------------------- */
+.landing-preview {
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--card);
+  overflow: hidden;
+  margin-bottom: 16px;
+  pointer-events: none;
+}
+
+.landing-preview-chrome {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.landing-preview-chrome .brand { font-size: 15px; }
+
+.landing-preview-page {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.landing-preview-chrome .pill { margin-left: auto; }
+
+.landing-preview-body { padding: 16px; }
+
+.landing-preview .readiness { margin-bottom: 10px; }
+
+.landing-preview .row-actions .primary,
+.landing-preview .row-actions .ghost {
+  display: inline-block;
+  width: auto;
+  cursor: default;
+}
+
+.landing-preview-stats {
+  grid-template-columns: repeat(2, 1fr);
+  margin-bottom: 0;
+}
+
+@media (min-width: 700px) {
+  .landing-preview-stats { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ---- features / steps / split ------------------------------------------- */
+.landing-features,
+.landing-steps,
+.landing-split {
+  display: grid;
+  gap: 12px;
+}
+
+.landing-feature,
+.landing-steps li,
+.landing-split-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 18px 16px;
+}
+
+.landing-feature h3,
+.landing-steps h3,
+.landing-split-card h3 {
+  font-size: 16px;
+  letter-spacing: -.02em;
+  margin: 0 0 8px;
+}
+
+.landing-feature p,
+.landing-steps p,
+.landing-split-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+@media (min-width: 800px) {
+  .landing-features { grid-template-columns: 1fr 1fr; }
+  .landing-steps { grid-template-columns: repeat(3, 1fr); }
+  .landing-split { grid-template-columns: 1fr 1fr; }
+}
+
+.landing-steps { list-style: none; margin: 0; padding: 0; }
+
+.landing-step-num {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* ---- FAQ ---------------------------------------------------------------- */
+.landing-faq { max-width: 640px; }
+
+.landing-faq details {
+  border-bottom: 1px solid var(--line);
+  padding: 14px 0;
+}
+
+.landing-faq details:first-child { border-top: 1px solid var(--line); }
+
+.landing-faq summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -.01em;
+  list-style: none;
+}
+
+.landing-faq summary::-webkit-details-marker { display: none; }
+
+.landing-faq summary::after {
+  content: "+";
+  float: right;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.landing-faq details[open] summary::after { content: "–"; }
+
+.landing-faq details p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* ---- footer ------------------------------------------------------------- */
+.landing-foot {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px 28px 32px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.landing-foot-links { display: flex; gap: 16px; margin: 0; }
+
+/* ---- auth modal --------------------------------------------------------- */
+.landing-auth-layer {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--bg) 45%, rgba(0, 0, 0, .35));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.gate.landing.is-auth .landing-auth-layer,
+.gate.landing.landing-auth .landing-auth-layer {
+  display: grid;
+}
+
+.landing-auth-layer .gate-card {
+  position: relative;
+  max-width: 380px;
+  box-shadow: var(--shadow-pop);
+}
+
+.landing-auth-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.landing-auth-close:hover { color: var(--ink); }
+
+/* Email verify / reset: only the card, no marketing behind it. */
+.gate.landing.landing-auth:not(.is-auth) .landing-bar,
+.gate.landing.landing-auth:not(.is-auth) .landing-hero,
+.gate.landing.landing-auth:not(.is-auth) .landing-section,
+.gate.landing.landing-auth:not(.is-auth) .landing-foot {
+  display: none;
+}
+
+.gate.landing.landing-auth:not(.is-auth) .landing-auth-layer {
+  background: var(--bg);
+  backdrop-filter: none;
+}
+
+/* ---- narrow screens ----------------------------------------------------- */
+@media (max-width: 899px) {
+  .landing-bar-inner { padding: 0 16px; }
+  .landing-nav { display: none; }
+  .landing-hero,
+  .landing-section,
+  .landing-foot { padding-left: 16px; padding-right: 16px; }
+  .landing-hero { padding-top: 40px; padding-bottom: 28px; }
+  .landing-hero h1 { max-width: none; }
+  .landing-preview-body { padding: 12px; }
+}
+
+@media (max-width: 420px) {
+  .landing-bar-actions .ghost { display: none; }
+}

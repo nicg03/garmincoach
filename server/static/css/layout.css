@@ -36,7 +36,7 @@
 }
 @media (max-width: 899px) {
   .gate-hero h1 { font-size: 24px; }
-  .gate-points { display: none; }
+  .gate:not(.landing) .gate-points { display: none; }
 }
 .gate-card {
   width: 100%;

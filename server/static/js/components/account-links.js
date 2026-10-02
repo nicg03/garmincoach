@@ -25,6 +25,7 @@ async function send(url, body) {
 function showPanel(html) {
   $('#shell').classList.add('hidden');
   $('#gate').classList.remove('hidden');
+  $('#gate').classList.add('landing-auth');
   $('#gate-form').classList.add('hidden');
   const panel = $('#gate-panel');
   panel.innerHTML = html;
@@ -33,6 +34,7 @@ function showPanel(html) {
 }
 
 export function closePanel() {
+  $('#gate').classList.remove('landing-auth');
   $('#gate-panel').classList.add('hidden');
   $('#gate-form').classList.remove('hidden');
 }

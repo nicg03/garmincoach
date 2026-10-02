@@ -221,18 +221,45 @@ function updateHint() {
   hint.classList.toggle('ok', long);
 }
 
+function showAuth(next = 'login') {
+  if (next === 'signup' && !state.site.signup_open) next = 'login';
+  setMode(next);
+  $('#gate').classList.add('is-auth');
+  requestAnimationFrame(() => $('#email').focus());
+}
+
+function hideAuth() {
+  closePanel();
+  $('#gate').classList.remove('is-auth');
+}
+
 function showGate(message = '') {
   clearTimeout(pollTimer);
-  closePanel();
+  hideAuth();
   $('#shell').classList.add('hidden');
   $('#gate').classList.remove('hidden');
   $('#gate-error').textContent = message;
   $('#gate-tabs [data-mode="signup"]').classList.toggle('hidden', !state.site.signup_open);
+  $$('[data-landing-signup]').forEach((button) => {
+    button.classList.toggle('hidden', !state.site.signup_open);
+  });
 }
 
 $$('#gate-tabs [data-mode]').forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
 $('#password').addEventListener('input', updateHint);
 $('#gate-forgot').addEventListener('click', () => showForgot($('#email').value.trim()));
+$$('[data-landing-signin]').forEach((button) => button.addEventListener('click', () => showAuth('login')));
+$$('[data-landing-signup]').forEach((button) => button.addEventListener('click', () => showAuth('signup')));
+$$('[data-landing-close]').forEach((button) => button.addEventListener('click', hideAuth));
+$('#landing-auth-layer').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget) hideAuth();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if ($('#gate').classList.contains('is-auth') || $('#gate').classList.contains('landing-auth')) {
+    hideAuth();
+  }
+});
 
 $('#gate-form').addEventListener('submit', async (event) => {
   event.preventDefault();

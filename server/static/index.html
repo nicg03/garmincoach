@@ -4,51 +4,204 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111111">
+<meta name="description" content="Connect Garmin once. See readiness, today's session, and a training plan.">
 <title>garmincoach</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/css/tokens.css?v=23">
-<link rel="stylesheet" href="/static/css/layout.css?v=23">
-<link rel="stylesheet" href="/static/css/components.css?v=23">
+<link rel="stylesheet" href="/static/css/tokens.css?v=26">
+<link rel="stylesheet" href="/static/css/layout.css?v=26">
+<link rel="stylesheet" href="/static/css/components.css?v=26">
+<link rel="stylesheet" href="/static/css/landing.css?v=26">
 </head>
 <body>
 
-<div id="gate" class="gate hidden">
-  <section class="gate-hero">
-    <div class="brand">garmin<span>coach</span></div>
-    <h1>Your Garmin data, a training plan and a coach in one place.</h1>
-    <p>Connect Garmin once. Every morning you see how recovered you are, what today's
-      session is, and whether your fitness is going the right way.</p>
-    <ul class="gate-points">
-      <li>Training load, form, HRV and sleep against your own baseline</li>
-      <li>Race plans with paces that land on your watch</li>
-      <li>An AI coach that reads your numbers, and room for a human one</li>
-    </ul>
-  </section>
-  <form class="gate-card" id="gate-form" novalidate>
-    <div class="gate-tabs" role="tablist" id="gate-tabs">
-      <button type="button" role="tab" data-mode="login" aria-selected="true">Sign in</button>
-      <button type="button" role="tab" data-mode="signup" aria-selected="false">Create account</button>
-    </div>
-    <label for="email">Email</label>
-    <input type="email" id="email" autocomplete="email" required>
-    <label for="password">Password</label>
-    <input type="password" id="password" autocomplete="current-password" required>
-    <p class="field-hint hidden" id="password-hint"></p>
-    <div id="gate-role" class="role-picker hidden">
-      <p class="muted">I am</p>
-      <div class="role-options">
-        <label class="role-option"><input type="radio" name="gate-role" value="athlete" checked><span>An athlete</span></label>
-        <label class="role-option"><input type="radio" name="gate-role" value="coach"><span>A coach</span></label>
+<div id="gate" class="gate landing hidden">
+  <header class="landing-bar">
+    <div class="landing-bar-inner">
+      <a class="brand" href="#">garmin<span>coach</span></a>
+      <nav class="landing-nav" aria-label="Landing">
+        <a href="#product">Product</a>
+        <a href="#how">How it works</a>
+        <a href="#coaches">Coaches</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="landing-bar-actions">
+        <button type="button" class="link" data-landing-signin>Sign in</button>
+        <button type="button" class="ghost small" data-landing-signup>Create account</button>
       </div>
     </div>
-    <button class="primary" type="submit" id="gate-submit">Sign in</button>
-    <p class="error" id="gate-error" role="alert"></p>
-    <!-- Forgot password: parked until a Resend domain exists (ACCOUNT_EMAILS). -->
-    <p class="gate-alt hidden" id="gate-alt"><button type="button" class="link" id="gate-forgot">Forgot password?</button></p>
-  </form>
-  <section class="gate-card hidden" id="gate-panel" aria-live="polite"></section>
+  </header>
+
+  <section class="landing-hero">
+    <h1>Garmin data, a plan, and a coach.</h1>
+    <p>Connect Garmin once. Each morning: readiness, today's session, and whether fitness is moving the right way.</p>
+    <div class="landing-hero-actions">
+      <button type="button" class="primary inline" data-landing-signup>Get started</button>
+      <button type="button" class="link" data-landing-signin>Sign in</button>
+    </div>
+  </section>
+
+  <section class="landing-section landing-preview-section" id="product">
+    <p class="landing-kicker">Product</p>
+    <h2>What you see after the first sync</h2>
+    <p class="landing-lede">Numbers against your own baseline — not a generic zone chart. The watch stays the place you train.</p>
+    <div class="landing-preview" aria-hidden="true">
+      <div class="landing-preview-chrome">
+        <span class="brand">garmin<span>coach</span></span>
+        <span class="landing-preview-page">Today</span>
+        <span class="pill ok">Synced 12 min ago</span>
+      </div>
+      <div class="landing-preview-body">
+        <section class="readiness good">
+          <div>
+            <p class="kicker">Friday 2 October</p>
+            <p class="verdict">Ready to train</p>
+            <p class="muted">HRV +4 · resting HR −2 · sleep 86</p>
+          </div>
+          <div class="session">
+            <p class="kicker">Today's session</p>
+            <h3>Threshold 8×3 min</h3>
+            <p class="muted">8.0 km · 3:52–3:58 /km</p>
+            <div class="row-actions">
+              <span class="primary inline">Keep as planned</span>
+              <span class="ghost">Ease</span>
+              <span class="ghost">Swap</span>
+              <span class="ghost">Rest</span>
+            </div>
+          </div>
+        </section>
+        <div class="cards landing-preview-stats">
+          <div class="stat"><div class="label">Form</div><div class="value">+12</div><div class="note good">Fresh</div></div>
+          <div class="stat"><div class="label">HRV</div><div class="value">68</div><div class="note good">+4 vs usual</div></div>
+          <div class="stat"><div class="label">Sleep</div><div class="value">86</div><div class="note">7h 42m</div></div>
+          <div class="stat"><div class="label">Load</div><div class="value">54</div><div class="note">CTL 48</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="landing-features">
+      <article class="landing-feature">
+        <p class="landing-kicker">Today</p>
+        <h3>Readiness first</h3>
+        <p>Keep, ease, swap or rest — plus the session on the calendar and the HRV / sleep deltas behind the call.</p>
+      </article>
+      <article class="landing-feature">
+        <p class="landing-kicker">Training</p>
+        <h3>Plans on the watch</h3>
+        <p>A block around a race, or a workout you build here. Paces and structure write through to Garmin.</p>
+      </article>
+      <article class="landing-feature">
+        <p class="landing-kicker">Insights</p>
+        <h3>Load, form, HRV</h3>
+        <p>Training load and recovery against your baseline, with activities you can open by range.</p>
+      </article>
+      <article class="landing-feature">
+        <p class="landing-kicker">Coaching</p>
+        <h3>AI, or a human</h3>
+        <p>Ask a coach that reads compact metrics. Link a person when you want notes and assigned sessions.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="landing-section" id="how">
+    <p class="landing-kicker">How it works</p>
+    <h2>Connect once. The morning does the rest.</h2>
+    <ol class="landing-steps">
+      <li>
+        <span class="landing-step-num">1</span>
+        <h3>Connect Garmin</h3>
+        <p>One sign-in. The password is used for that step and never stored — you keep an encrypted token you can revoke.</p>
+      </li>
+      <li>
+        <span class="landing-step-num">2</span>
+        <h3>Morning briefing</h3>
+        <p>Each day: how recovered you are, what the session is, and whether fitness is going the right way.</p>
+      </li>
+      <li>
+        <span class="landing-step-num">3</span>
+        <h3>Workouts on the watch</h3>
+        <p>Race-plan paces and workouts you build here land on Garmin, so the hard work stays on the road.</p>
+      </li>
+    </ol>
+    <p class="landing-note">If the server cannot reach Garmin, a browser extension or Garmin's official export zip still feed the same pipeline.</p>
+  </section>
+
+  <section class="landing-section" id="coaches">
+    <p class="landing-kicker">Accounts</p>
+    <h2>Train alone, or coach a roster.</h2>
+    <p class="landing-lede">You pick athlete or coach when you create the account. Same product; extra room if you work with other people.</p>
+    <div class="landing-split">
+      <article class="landing-split-card">
+        <p class="landing-kicker">Athlete</p>
+        <h3>Your numbers, your plan</h3>
+        <p>Today, Training, Insights and the AI coach. Link a human coach when you want notes and assigned sessions.</p>
+      </article>
+      <article class="landing-split-card">
+        <p class="landing-kicker">Coach</p>
+        <h3>A roster, not a shared login</h3>
+        <p>Inbox for requests, a read-only view of each athlete, notes, and workouts you can assign.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="landing-section" id="faq">
+    <p class="landing-kicker">FAQ</p>
+    <h2>Things worth knowing</h2>
+    <div class="landing-faq">
+      <details>
+        <summary>Are accounts separate?</summary>
+        <p>Yes. Each account has its own password, sync and history. Queries always include a user id, so one person's numbers cannot appear on another person's charts.</p>
+      </details>
+      <details>
+        <summary>Is the Garmin connection official?</summary>
+        <p>No. The site signs in the way Garmin's mobile app does. It works today, but it is unofficial. If a datacentre IP gets blocked, the browser extension and the official export zip keep working.</p>
+      </details>
+      <details>
+        <summary>What can a coach see?</summary>
+        <p>Only athletes who link to them. A coach gets a read-only view of that training, can leave notes and assign workouts. They do not get the password or the Garmin login.</p>
+      </details>
+      <details>
+        <summary>How often does data update?</summary>
+        <p>Connected accounts sync every few hours. Opening the site can start a sync when the last one is stale. Older history comes in from Data sources.</p>
+      </details>
+    </div>
+  </section>
+
+  <footer class="landing-foot">
+    <a class="brand" href="#">garmin<span>coach</span></a>
+    <p class="landing-foot-links">
+      <button type="button" class="link" data-landing-signin>Sign in</button>
+      <button type="button" class="link" data-landing-signup>Create account</button>
+    </p>
+  </footer>
+
+  <div class="landing-auth-layer" id="landing-auth-layer">
+    <button type="button" class="landing-auth-close" data-landing-close aria-label="Close">×</button>
+    <form class="gate-card" id="gate-form" novalidate>
+      <div class="gate-tabs" role="tablist" id="gate-tabs">
+        <button type="button" role="tab" data-mode="login" aria-selected="true">Sign in</button>
+        <button type="button" role="tab" data-mode="signup" aria-selected="false">Create account</button>
+      </div>
+      <label for="email">Email</label>
+      <input type="email" id="email" autocomplete="email" required>
+      <label for="password">Password</label>
+      <input type="password" id="password" autocomplete="current-password" required>
+      <p class="field-hint hidden" id="password-hint"></p>
+      <div id="gate-role" class="role-picker hidden">
+        <p class="muted">I am</p>
+        <div class="role-options">
+          <label class="role-option"><input type="radio" name="gate-role" value="athlete" checked><span>An athlete</span></label>
+          <label class="role-option"><input type="radio" name="gate-role" value="coach"><span>A coach</span></label>
+        </div>
+      </div>
+      <button class="primary" type="submit" id="gate-submit">Sign in</button>
+      <p class="error" id="gate-error" role="alert"></p>
+      <!-- Forgot password: parked until a Resend domain exists (ACCOUNT_EMAILS). -->
+      <p class="gate-alt hidden" id="gate-alt"><button type="button" class="link" id="gate-forgot">Forgot password?</button></p>
+    </form>
+    <section class="gate-card hidden" id="gate-panel" aria-live="polite"></section>
+  </div>
 </div>
 
 <div id="shell" class="shell hidden">
@@ -81,6 +234,6 @@
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script type="module" src="/static/js/main.js?v=23"></script>
+<script type="module" src="/static/js/main.js?v=26"></script>
 </body>
 </html>
