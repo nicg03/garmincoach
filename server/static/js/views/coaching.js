@@ -17,6 +17,11 @@ function linkLabel(status) {
   return label === key ? status : label;
 }
 
+function noteKind(kind) {
+  const label = t('note.' + kind);
+  return label === 'note.' + kind ? kind : label;
+}
+
 export async function render(root, ctx = {}) {
   const tabs = role() === 'athlete' ? [['ai', t('coach.ai')], ['coach', t('coach.mine')]] : [['ai', t('coach.ai')]];
   const wanted = (ctx.path || [])[0];
@@ -173,7 +178,7 @@ async function humanCoach(host) {
     </div>
     <div class="card">
       <div class="card-head"><h2>${esc(t('coach.notes'))}</h2></div>
-      ${notes.length ? notes.map((n) => `<div class="coach-note"><div class="meta"><span class="badge">${esc(n.kind)}</span>
+      ${notes.length ? notes.map((n) => `<div class="coach-note"><div class="meta"><span class="badge">${esc(noteKind(n.kind))}</span>
         ${esc(n.coach_email)} · ${esc(n.created)}</div>${esc(n.text)}</div>`).join('')
         : emptyState(esc(t('coach.notesEmpty')), esc(t('coach.notesHelp')))}
     </div>`;

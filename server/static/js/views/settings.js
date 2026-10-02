@@ -3,7 +3,8 @@
 import { renderGarmin } from '../components/garmin-connect.js';
 import { bindDropzone, dropzoneHtml, extensionHtml } from '../components/importers.js';
 import { api, post, put } from '../core/api.js';
-import { getLocale, setLocale, t, translatePhrase } from '../core/i18n.js';
+import { getLocale, t, translatePhrase } from '../core/i18n.js';
+import { finishSignOut, signOut } from '../core/session.js';
 import { rerender } from '../core/router.js';
 import { cached, invalidate, refreshStatus, state } from '../core/state.js';
 import { $, $$, bindCopy, busy, confirmDialog, esc, loadingPage, subnav, toast } from '../core/ui.js';
@@ -14,11 +15,23 @@ function tabs() {
 const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const DEFAULT_MINUTES = { mon: 0, tue: 60, wed: 60, thu: 60, fri: 60, sat: 90, sun: 90 };
 
+function languageCard() {
+  const lang = getLocale();
+  return `<div class="card">
+    <div class="card-head"><h2>${esc(t('settings.language'))}</h2></div>
+    <p class="muted">${esc(t('settings.languageHelp'))}</p>
+    <div class="lang-switch" role="group" aria-label="${esc(t('settings.language'))}">
+      <button type="button" data-lang="en" aria-pressed="${lang === 'en'}">English</button>
+      <button type="button" data-lang="it" aria-pressed="${lang === 'it'}">Italiano</button>
+    </div>
+  </div>`;
+}
+
 export async function render(root, ctx = {}) {
   const wanted = (ctx.path || [])[0];
   const items = tabs();
   const sub = items.some(([key]) => key === wanted) ? wanted : 'profile';
-  root.innerHTML = `${subnav('#/settings', items, sub)}<div data-sub>${loadingPage()}</div>`;
+  root.innerHTML = `${languageCard()}${subnav('#/settings', items, sub)}<div data-sub>${loadingPage()}</div>`;
   const host = $('[data-sub]', root);
   if (sub === 'sources') return sources(host);
   if (sub === 'account') return account(host);
@@ -33,18 +46,7 @@ function rows(pairs) {
 async function profile(host) {
   const athlete = (await cached('athlete', () => api('/api/athlete'))) || {};
   const avail = athlete.availability || {};
-  const lang = getLocale();
   host.innerHTML = `
-    <div class="card">
-      <div class="card-head"><h2>${esc(t('settings.language'))}</h2></div>
-      <p class="muted">${esc(t('settings.languageHelp'))}</p>
-      <label class="field"><span>${esc(t('settings.language'))}</span>
-        <select data-locale aria-label="${esc(t('settings.language'))}">
-          <option value="en"${lang === 'en' ? ' selected' : ''}>English</option>
-          <option value="it"${lang === 'it' ? ' selected' : ''}>Italiano</option>
-        </select>
-      </label>
-    </div>
     <form class="card" data-athlete>
       <div class="card-head"><h2>${esc(t('settings.availability'))}</h2></div>
       <p class="muted">${esc(t('settings.availabilityHelp'))}</p>
@@ -65,8 +67,6 @@ async function profile(host) {
       </div>
       <div class="row-actions"><button class="primary inline" type="submit">${esc(t('settings.saveProfile'))}</button></div>
     </form>`;
-  $('[data-locale]', host).addEventListener('change', (event) => setLocale(event.target.value));
-
   const form = $('[data-athlete]', host);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -214,11 +214,7 @@ function account(host) {
       <button type="button" class="ghost danger-button" data-delete>${esc(t('settings.deleteBtn'))}</button>
     </div>`;
 
-  $('[data-logout]', host).addEventListener('click', async () => {
-    await fetch('/api/logout', { method: 'POST' });
-    location.hash = '';
-    location.reload();
-  });
+  $('[data-logout]', host).addEventListener('click', () => signOut());
   const resend = $('[data-verify]', host);
   if (resend) {
     resend.addEventListener('click', () => busy(resend, t('banner.sending'), async () => {
@@ -283,8 +279,7 @@ function account(host) {
     if (!ok) return;
     try {
       await post('/api/account/delete', { confirm: user.email });
-      location.hash = '';
-      location.reload();
+      finishSignOut();
     } catch (error) {
       toast(error.message, 'bad');
       refreshStatus().catch(() => {});

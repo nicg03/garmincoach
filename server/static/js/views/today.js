@@ -2,6 +2,7 @@
    is one click away. */
 import { activityHead, activityRows, groupedHeadline } from '../components/headline.js';
 import { api, post } from '../core/api.js';
+import { showText } from '../core/copy.js';
 import { info } from '../core/glossary.js';
 import { t, translatePhrase } from '../core/i18n.js';
 import { rerender } from '../core/router.js';
@@ -10,6 +11,11 @@ import {
   $, $$, busy, daysUntil, emptyState, esc, fmt, longDate, markdown, signed, skeleton, todayIso, toast,
 } from '../core/ui.js';
 import { renderOnboarding } from './onboarding.js';
+
+function noteKind(kind) {
+  const label = t('note.' + kind);
+  return label === 'note.' + kind ? kind : label;
+}
 
 function verdict(action) {
   const map = {
@@ -65,15 +71,16 @@ function sessionBlock(decision) {
     </div>`;
   }
   const wo = session.workout || {};
-  const name = wo.name || (session.kind || '').replace(/_/g, ' ') || t('today.sessionFallback');
-  const desc = session.description || wo.description || '';
+  const name = showText(wo.name) || showText(session.kind) || (session.kind || '').replace(/_/g, ' ') || t('today.sessionFallback');
+  const desc = showText(session.description || wo.description || '');
   const km = session.distance_km != null ? `${fmt(session.distance_km, 1)} km` : '';
   const applied = decision.applied;
+  const chosen = applied ? (t('today.' + applied) === 'today.' + applied ? applied : t('today.' + applied)) : '';
   return `<div class="session">
     <p class="kicker">${esc(t('today.session'))} ${info('session')} ${session.assigned_by ? `<span class="badge">${esc(t('today.fromCoach'))}</span>` : ''}</p>
     <h3>${esc(name)}</h3>
     <p class="muted">${esc(desc || [km, (wo.targets && wo.targets.work) || ''].filter(Boolean).join(' · '))}</p>
-    ${applied ? `<p class="muted">${esc(t('today.youChose'))} <strong>${esc(applied)}</strong>.</p>` : ''}
+    ${applied ? `<p class="muted">${esc(t('today.youChose'))} <strong>${esc(chosen)}</strong>.</p>` : ''}
     <div class="row-actions" data-actions>
       ${actions().map(([key, label]) => `<button type="button" data-act="${key}"
         class="${key === (applied || decision.action) ? 'primary inline' : 'ghost'}">${label}</button>`).join('')}
@@ -123,7 +130,7 @@ function coachNoteCard(mine) {
   if (!note) return '';
   return `<div class="card"><div class="card-head"><h2>${esc(t('today.fromCoachTitle'))}</h2>
       <a class="btn-link" href="#/coaching/coach">${esc(t('today.allNotes'))}</a></div>
-    <div class="coach-note"><div class="meta"><span class="badge">${esc(note.kind)}</span>
+    <div class="coach-note"><div class="meta"><span class="badge">${esc(noteKind(note.kind))}</span>
       ${esc(note.coach_email)} · ${esc(note.created)}</div>${esc(note.text)}</div></div>`;
 }
 

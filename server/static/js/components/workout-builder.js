@@ -2,6 +2,7 @@
    coach's "Assign a workout". The steps live in a model and the inputs write
    into it, so nested repeats round-trip without re-reading the DOM. */
 import { api, post } from '../core/api.js';
+import { showText } from '../core/copy.js';
 import { t } from '../core/i18n.js';
 import { invalidate, state } from '../core/state.js';
 import { $, $$, busy, esc, todayIso, toast } from '../core/ui.js';
@@ -210,8 +211,8 @@ export function mountBuilder(host, { athleteId = null, library = true, title = '
     table.innerHTML = `<thead><tr><th>${esc(t('wo.name'))}</th><th>${esc(t('wo.sport'))}</th><th>${esc(t('wo.kind'))}</th><th>${esc(t('wo.load'))}</th><th></th></tr></thead><tbody>` +
       (items.map((w, i) => {
         const wo = w.workout || w;
-        return `<tr><td>${esc(w.name || wo.name || '')}</td><td>${esc(wo.sport || '')}</td>
-          <td>${esc(wo.kind || '')}</td><td>${wo.est_load || ''}</td>
+        return `<tr><td>${esc(showText(w.name || wo.name || ''))}</td><td>${esc(showText(wo.sport || ''))}</td>
+          <td>${esc(showText(wo.kind || ''))}</td><td>${wo.est_load || ''}</td>
           <td><button type="button" class="ghost" data-use="${i}">${esc(t('wo.use'))}</button></td></tr>`;
       }).join('') || `<tr><td colspan="5">${esc(t('wo.noTemplates'))}</td></tr>`) + '</tbody>';
     $$('[data-use]', table).forEach((button) => button.addEventListener('click', () => {

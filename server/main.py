@@ -222,8 +222,8 @@ def login(request: Request, response: Response,
 
 
 @app.post("/api/logout")
-def logout(response: Response):
-    response.delete_cookie(security.COOKIE_NAME, path="/")
+def logout(request: Request, response: Response):
+    security.clear_session_cookie(request, response)
     return {"ok": True}
 
 
@@ -452,14 +452,14 @@ def pair_page(user_code: str):
 
 
 @app.post("/api/account/delete")
-def delete_account(response: Response, confirm: str = Body("", embed=True),
+def delete_account(request: Request, response: Response, confirm: str = Body("", embed=True),
                    user: dict = Depends(security.current_user)):
     if confirm.strip().lower() != user["email"]:
         return JSONResponse(
             {"error": "Type your email address to confirm."}, 400)
     with db.store() as handle:
         handle.delete_user(user["id"])
-    response.delete_cookie(security.COOKIE_NAME, path="/")
+    security.clear_session_cookie(request, response)
     return {"ok": True}
 
 

@@ -171,6 +171,16 @@ def sign_in(request: Request, response, user: dict) -> None:
                         **cookie_kwargs(request))
 
 
+def clear_session_cookie(request: Request, response) -> None:
+    """Drop the session. Flags must match sign-in or the browser keeps the cookie."""
+    flags = cookie_kwargs(request)
+    response.delete_cookie(COOKIE_NAME,
+                           path=flags["path"],
+                           secure=flags["secure"],
+                           httponly=flags["httponly"],
+                           samesite=flags["samesite"])
+
+
 def user_from_sync_token(request: Request) -> dict:
     """Identify the account behind a push."""
     header = request.headers.get("authorization", "")

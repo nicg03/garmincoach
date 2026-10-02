@@ -128,6 +128,24 @@ label.field > span { display: block; margin-bottom: 4px; }
   background: none; color: var(--ink); font-size: 14px; text-decoration: none; border-radius: 6px;
 }
 .menu-list a:hover, .menu-list button:hover { background: var(--bg); }
+.menu-list .lang-switch { margin: 4px 4px 8px; }
+.menu-list .lang-switch button:hover { background: var(--bg); }
+.menu-list .lang-switch button[aria-pressed="true"]:hover { background: var(--solid); }
+
+.lang-switch { display: flex; gap: 8px; }
+.lang-switch button {
+  flex: 1;
+  padding: 10px 14px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+}
+.lang-switch button[aria-pressed="true"] {
+  background: var(--solid);
+  color: var(--on-solid);
+  border-color: var(--solid);
+}
 
 /* ---- tiles --------------------------------------------------------------- */
 .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }

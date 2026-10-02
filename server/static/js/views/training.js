@@ -4,8 +4,9 @@
 import { mountBuilder } from '../components/workout-builder.js';
 import { api, del, post, scoped } from '../core/api.js';
 import { COLORS, baseOptions, draw } from '../core/charts.js';
+import { showText } from '../core/copy.js';
 import { info } from '../core/glossary.js';
-import { t } from '../core/i18n.js';
+import { getLocale, t } from '../core/i18n.js';
 import { rerender } from '../core/router.js';
 import { cached, invalidate, state } from '../core/state.js';
 import {
@@ -42,7 +43,13 @@ function mondayOf(iso) {
 }
 
 function sessionKind(s) {
-  return (s.kind || (s.workout && s.workout.kind) || '').replace(/_/g, ' ');
+  const kind = s.kind || (s.workout && s.workout.kind) || '';
+  return showText(kind) || kind.replace(/_/g, ' ');
+}
+
+function sessionTitle(session) {
+  const wo = session.workout || {};
+  return showText(wo.name) || sessionKind(session);
 }
 
 function paceStatusLabel(status) {
@@ -108,13 +115,13 @@ function paceInsights(body) {
     const left = 50 + (pct / 12) * 50;
     const klass = r.status === 'on_target' ? 'ok' : (r.status === 'too_fast' ? 'fast' : 'slow');
     return `<div class="insight-row">
-      <span class="d">${esc((r.date || '').slice(5))} · ${esc(r.name || r.kind || '')}</span>
+      <span class="d">${esc((r.date || '').slice(5))} · ${esc(showText(r.name || r.kind || ''))}</span>
       <span class="bar"><i class="${klass}" style="left:${left}%"></i></span>
       <span class="nums">${esc(r.actual || '—')} vs ${esc(r.target || '—')}</span>
     </div>`;
   }).join('');
   const recHtml = rec
-    ? `<div class="insight-rec"><p>${esc(rec.summary)}</p>
+    ? `<div class="insight-rec"><p>${esc(showText(rec.summary))}</p>
         <div class="row-actions">
           <button type="button" class="primary inline" data-insight="accept">${esc(t('train.acceptPaces'))}</button>
           <button type="button" class="ghost" data-insight="dismiss">${esc(t('train.keepPaces'))}</button>
@@ -149,7 +156,7 @@ function weekCalendar(plan) {
       const cls = [s.date === today ? 'today' : '', s.state === 'completed' ? 'done' : ''].filter(Boolean).join(' ');
       return `<button type="button" class="day-cell ${cls}" data-sid="${esc(s.id)}">
         <span class="dow">${label} ${s.date.slice(8)}</span>
-        <span class="nm">${esc(wo.name || sessionKind(s))}</span>
+        <span class="nm">${esc(sessionTitle(s))}</span>
         <span class="meta">${esc([km, pace].filter(Boolean).join(' · '))}</span>
         ${s.assigned_by ? `<span class="badge">${esc(t('train.coachBadge'))}</span>` : ''}
         ${s.state === 'skipped' ? `<span class="badge warn">${esc(t('train.skipped'))}</span>` : ''}
@@ -157,7 +164,7 @@ function weekCalendar(plan) {
     }).join('');
     const m = meta[key] || {};
     return `<div class="week-block${key === thisWeek ? ' current' : ''}" ${key === thisWeek ? 'data-current' : ''}>
-      <h3>${esc(t('train.weekOf', { date: longDate(key) }))}<span>${esc(m.phase || list[0].phase || '')}${m.target_km ? ` · ${fmt(m.target_km, 0)} km` : ''}</span></h3>
+      <h3>${esc(t('train.weekOf', { date: longDate(key) }))}<span>${esc(showText(m.phase || list[0].phase || ''))}${m.target_km ? ` · ${fmt(m.target_km, 0)} km` : ''}</span></h3>
       <div class="week-grid">${cells}</div>
     </div>`;
   }).join('');
@@ -173,12 +180,12 @@ function stepRows(steps) {
     }
     const dur = st.duration || {};
     const when = `${dur.value ?? ''}${dur.unit ? ' ' + dur.unit : ''}`;
-    const t = st.target || {};
+    const target = st.target || {};
     let pace = '';
-    if (t.type === 'pace') pace = t.low && t.high && t.low !== t.high ? `${t.high}–${t.low}/km` : `${t.low || t.high || ''}/km`;
-    else if (t.type === 'hr_zone') pace = `HR Z${t.zone}`;
-    else if (t.type === 'power_zone') pace = `Power Z${t.zone}`;
-    rows.push(`<tr><td>${esc(st.intensity || '')}</td><td>${esc(when)}</td><td>${esc(pace)}</td></tr>`);
+    if (target.type === 'pace') pace = target.low && target.high && target.low !== target.high ? `${target.high}–${target.low}/km` : `${target.low || target.high || ''}/km`;
+    else if (target.type === 'hr_zone') pace = t('train.hrZone', { n: target.zone });
+    else if (target.type === 'power_zone') pace = t('train.powerZone', { n: target.zone });
+    rows.push(`<tr><td>${esc(showText(st.intensity || ''))}</td><td>${esc(when)}</td><td>${esc(pace)}</td></tr>`);
   });
   return rows;
 }
@@ -191,11 +198,11 @@ function sessionSheet(session, readOnly) {
       target: session.target_pace || t('train.target'),
       status: paceStatusLabel(session.pace_status),
     }))}</p>` : '';
-  return `<div class="card-head"><h2>${esc(wo.name || sessionKind(session))}</h2>
+  return `<div class="card-head"><h2>${esc(sessionTitle(session))}</h2>
       <span class="muted">${esc(longDate(session.date))}</span></div>
     ${session.assigned_by ? `<span class="badge">${esc(t('train.fromTheCoach'))}</span>` : ''}
-    <p class="muted">${esc(session.purpose || wo.purpose || '')}</p>
-    <p>${esc(session.description || wo.description || '')}</p>
+    <p class="muted">${esc(showText(session.purpose || wo.purpose || ''))}</p>
+    <p>${esc(showText(session.description || wo.description || ''))}</p>
     ${done}
     <div class="scroll"><table class="session-steps">
       <thead><tr><th>${esc(t('train.step'))}</th><th>${esc(t('train.duration'))}</th><th>${esc(t('train.target'))}</th></tr></thead>
@@ -221,6 +228,20 @@ function drawProjected(canvas, series) {
     },
     options: baseOptions(),
   });
+}
+
+function planBlurb(plan) {
+  const h = plan.headline || {};
+  if (getLocale() === 'it' && h.weeks) {
+    return `<p class="muted">${esc(t('train.rationale', {
+      weeks: h.weeks,
+      race: plan.name || h.race || t('train.planFallback'),
+      family: showText(h.family || ''),
+      now: fmt(h.weekly_km_now),
+      peak: fmt(h.weekly_km_peak),
+    }))}</p>`;
+  }
+  return plan.rationale ? `<p class="muted">${esc(plan.rationale)}</p>` : '';
 }
 
 async function calendar(host, opts) {
@@ -252,10 +273,10 @@ async function calendar(host, opts) {
         ${readOnly || oneOff ? '' : `<button type="button" class="${active ? 'ghost' : 'primary inline'}" data-activate>
           ${esc(active ? t('train.resend') : t('train.send'))}</button>`}
       </div>
-      ${plan.rationale ? `<p class="muted">${esc(plan.rationale)}</p>` : ''}
+      ${planBlurb(plan)}
       ${oneOff ? `<p class="muted">${esc(t('train.oneOff'))}${readOnly ? '' :
         ` <a class="btn-link" href="#/training/races">${esc(t('train.buildRace'))}</a>`}</p>` : `<div class="cards">
-        ${tile(t('train.weeks'), fmt(h.weeks), h.short_block ? t('train.shortBlock', { n: h.ideal_weeks }) : (h.family || ''))}
+        ${tile(t('train.weeks'), fmt(h.weeks), h.short_block ? t('train.shortBlock', { n: h.ideal_weeks }) : showText(h.family || ''))}
         ${tile(t('train.sessions'), fmt(h.sessions), adh.planned ? t('train.sessionsDone', { done: adh.completed, planned: adh.planned }) +
           (adh.skipped ? `, ${t('train.sessionsSkipped', { n: adh.skipped })}` : '') : '', '', info('adherence'))}
         ${tile(t('train.vdot'), fmt(h.vdot, 1), '', '', info('vdot'))}

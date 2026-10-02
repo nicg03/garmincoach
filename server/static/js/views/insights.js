@@ -3,6 +3,7 @@
    (Performance), and what did I actually do (Activities). */
 import { activityHead, activityRows, loadTiles } from '../components/headline.js';
 import { api, scoped } from '../core/api.js';
+import { showText } from '../core/copy.js';
 import { COLORS, PALETTE, axes, baseOptions, draw } from '../core/charts.js';
 import { info } from '../core/glossary.js';
 import { t } from '../core/i18n.js';
@@ -87,7 +88,7 @@ function load(host, data) {
   const sports = [...new Set(weeks.flatMap((w) => Object.keys(w.by_type || {})))];
   const datasets = sports.map((sport, i) => ({
     type: 'bar',
-    label: sport.replace(/_/g, ' '),
+    label: showText(sport),
     data: weeks.map((w) => ((w.by_type || {})[sport] || {}).hours || 0),
     backgroundColor: PALETTE[i % PALETTE.length],
     stack: 'w',
@@ -273,7 +274,7 @@ async function activities(host, opts) {
         <div class="composer">
           <input type="search" placeholder="${esc(t('ins.searchPh'))}" aria-label="${esc(t('ins.searchLabel'))}" data-q>
           <select aria-label="${esc(t('ins.sport'))}" data-sport><option value="">${esc(t('ins.allSports'))}</option>
-            ${sports.map((s) => `<option value="${esc(s)}">${esc(s.replace(/_/g, ' '))}</option>`).join('')}</select>
+            ${sports.map((s) => `<option value="${esc(s)}">${esc(showText(s))}</option>`).join('')}</select>
         </div>
       </div>
       ${opts.athleteId ? `<p class="muted">${esc(t('ins.recent25'))}</p>` : ''}

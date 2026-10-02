@@ -3,8 +3,9 @@
    frame, so a slow answer for a page you already left lands nowhere. */
 import { closePanel, isLinkRoute, openLink, showForgot } from './components/account-links.js';
 import { api, onUnauthorized, post } from './core/api.js';
-import { initLocale, onLocale, t, translatePhrase } from './core/i18n.js';
+import { getLocale, initLocale, onLocale, setLocale, t, translatePhrase } from './core/i18n.js';
 import { navigate, path, rerender, start } from './core/router.js';
+import { signOut } from './core/session.js';
 import { events, hasData, refreshStatus, role, state } from './core/state.js';
 import { $, $$, agoFromEpoch, busy, errorCard, esc, loadingPage, toast } from './core/ui.js';
 import { destroyCharts, initCharts } from './core/charts.js';
@@ -108,6 +109,7 @@ let cleanup = null;
 let lastSection = null;
 
 async function onRoute(segments) {
+  if ($('#shell').classList.contains('hidden')) return;
   if (isLinkRoute(segments)) {
     clearTimeout(pollTimer);
     openLink(segments, { done: () => boot() });
@@ -313,10 +315,21 @@ document.addEventListener('click', (event) => {
 $('#user-list').addEventListener('click', (event) => {
   if (event.target.closest('a')) toggleMenu(false);
 });
-$('#btn-logout').addEventListener('click', async () => {
-  await fetch('/api/logout', { method: 'POST' });
-  location.hash = '';
-  location.reload();
+$('#btn-logout').addEventListener('click', () => {
+  toggleMenu(false);
+  signOut();
+});
+
+function paintLang() {
+  const lang = getLocale();
+  $$('[data-lang]').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.lang === lang));
+  });
+}
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-lang]');
+  if (!button) return;
+  setLocale(button.dataset.lang);
 });
 
 // ---- boot -------------------------------------------------------------------------
@@ -354,7 +367,15 @@ onUnauthorized(() => showGate());
 installGlossary();
 events.addEventListener('inbox', loadInboxCount);
 initLocale();
+paintLang();
+document.addEventListener('app:signed-out', () => {
+  state.status = {};
+  toggleMenu(false);
+  document.title = 'garmincoach';
+  showGate();
+});
 onLocale(() => {
+  paintLang();
   const banner = $('#account-banner');
   if (banner) delete banner.dataset.for;
   setMode(mode);
