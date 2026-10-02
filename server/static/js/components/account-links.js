@@ -1,6 +1,7 @@
 /* The pages behind links in account emails (#/verify, #/reset, #/email) and
    the forgot-password form. They work signed in or not, so they render in
    the gate's second card rather than inside the shell. */
+import { t } from '../core/i18n.js';
 import { state } from '../core/state.js';
 import { $, esc, toast } from '../core/ui.js';
 
@@ -18,7 +19,7 @@ async function send(url, body) {
     body: JSON.stringify(body),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || data.detail || 'Something went wrong.');
+  if (!response.ok) throw new Error(data.error || data.detail || t('account.wentWrong'));
   return data;
 }
 
@@ -57,19 +58,18 @@ export async function openLink([kind, token], { done }) {
     resetForm(token, moveOn);
     return;
   }
-  showPanel(`<h2>${kind === 'verify' ? 'Confirming your email…' : 'Changing your email…'}</h2>`);
+  showPanel(`<h2>${esc(kind === 'verify' ? t('account.confirming') : t('account.changing'))}</h2>`);
   try {
     if (kind === 'verify') {
       const body = await send('/api/email/verify', { token });
-      result('Email confirmed', `<strong>${esc(body.email)}</strong> is confirmed. You can now reset
-        your password with it if you ever need to.`, 'Continue', moveOn);
+      result(t('account.confirmed'), `<strong>${esc(body.email)}</strong> ${esc(t('account.confirmedBody'))}`, t('account.continue'), moveOn);
     } else {
       const body = await send('/api/email/change/confirm', { token });
-      result('Email changed', `From now on you sign in with <strong>${esc(body.user.email)}</strong>.
-        Other devices were signed out.`, 'Continue', moveOn);
+      result(t('account.changed'), `${esc(t('account.changedBody'))} <strong>${esc(body.user.email)}</strong>.
+        ${esc(t('account.changedAfter'))}`, t('account.continue'), moveOn);
     }
   } catch (error) {
-    result('That link didn\'t work', esc(error.message), 'Continue', moveOn);
+    result(t('account.linkFailed'), esc(error.message), t('account.continue'), moveOn);
   }
 }
 
@@ -77,12 +77,12 @@ function resetForm(token, moveOn) {
   const min = state.site.min_password || 8;
   const panel = showPanel(`
     <form novalidate data-reset>
-      <h2>Choose a new password</h2>
-      <p class="gate-panel-text">Every device signed in with the old one gets signed out.</p>
-      <label for="reset-password">New password</label>
+      <h2>${esc(t('account.newPasswordTitle'))}</h2>
+      <p class="gate-panel-text">${esc(t('account.newPasswordHelp'))}</p>
+      <label for="reset-password">${esc(t('account.newPassword'))}</label>
       <input type="password" id="reset-password" autocomplete="new-password" required>
-      <p class="field-hint">At least ${min} characters.</p>
-      <button class="primary" type="submit">Save password</button>
+      <p class="field-hint">${esc(t('gate.lengthMin', { n: min }))}</p>
+      <button class="primary" type="submit">${esc(t('account.savePassword'))}</button>
       <p class="error" role="alert" data-error></p>
     </form>`);
   const form = $('[data-reset]', panel);
@@ -95,7 +95,7 @@ function resetForm(token, moveOn) {
     button.disabled = true;
     try {
       await send('/api/password/reset', { token, password: $('#reset-password', form).value });
-      toast('Password changed. You\'re signed in.');
+      toast(t('account.passwordIn'));
       moveOn();
     } catch (e) {
       error.textContent = e.message;
@@ -108,13 +108,13 @@ function resetForm(token, moveOn) {
 export function showForgot(email = '') {
   const panel = showPanel(`
     <form novalidate data-forgot>
-      <h2>Reset your password</h2>
-      <p class="gate-panel-text">We'll email you a link to choose a new one.</p>
-      <label for="forgot-email">Email</label>
+      <h2>${esc(t('account.resetTitle'))}</h2>
+      <p class="gate-panel-text">${esc(t('account.resetHelp'))}</p>
+      <label for="forgot-email">${esc(t('gate.email'))}</label>
       <input type="email" id="forgot-email" autocomplete="email" required value="${esc(email)}">
-      <button class="primary" type="submit">Send reset link</button>
+      <button class="primary" type="submit">${esc(t('account.sendReset'))}</button>
       <p class="error" role="alert" data-error></p>
-      <p class="gate-alt"><button type="button" class="link" data-back>Back to sign in</button></p>
+      <p class="gate-alt"><button type="button" class="link" data-back>${esc(t('account.back'))}</button></p>
     </form>`);
   const form = $('[data-forgot]', panel);
   $('#forgot-email', form).focus();
@@ -124,17 +124,20 @@ export function showForgot(email = '') {
     const address = $('#forgot-email', form).value.trim();
     const error = $('[data-error]', form);
     if (!address) {
-      error.textContent = 'Enter your email.';
+      error.textContent = t('account.enterEmail');
       return;
     }
     const button = $('button[type="submit"]', form);
     button.disabled = true;
     try {
       await send('/api/password/forgot', { email: address });
-      const where = state.site.email ? ''
-        : ' Email isn\'t set up on this server, so the link is in the server log.';
-      result('Check your inbox', `If <strong>${esc(address)}</strong> has an account, a reset link
-        is on its way. It works for one hour.${where}`, 'Back to sign in', closePanel);
+      const where = state.site.email ? '' : ` ${esc(t('account.noMail'))}`;
+      result(
+        t('account.checkInbox'),
+        `${t('account.resetSent', { email: `<strong>${esc(address)}</strong>` })}${where}`,
+        t('account.back'),
+        closePanel,
+      );
     } catch (e) {
       error.textContent = e.message;
       button.disabled = false;

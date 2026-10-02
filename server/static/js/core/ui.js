@@ -1,5 +1,6 @@
 /* Small DOM helpers and the shared feedback widgets: tiles, toasts, confirm
    dialogs, skeletons, empty states, sub-navigation, markdown. */
+import { dateLocale, t } from './i18n.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -33,7 +34,7 @@ export function shortDate(iso) {
 export function longDate(iso) {
   if (!iso) return '';
   const d = new Date(iso.slice(0, 10) + 'T00:00:00');
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  return d.toLocaleDateString(dateLocale(), { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 export function daysUntil(iso) {
@@ -44,14 +45,14 @@ export function daysUntil(iso) {
 
 /** "5 min ago" from epoch seconds. */
 export function agoFromEpoch(seconds) {
-  if (!seconds) return 'never';
+  if (!seconds) return t('time.never');
   const minutes = Math.round((Date.now() / 1000 - seconds) / 60);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1) return t('time.justNow');
+  if (minutes < 60) return t('time.minAgo', { n: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
+  if (hours < 24) return t('time.hoursAgo', { n: hours });
   const days = Math.round(hours / 24);
-  return days === 1 ? 'yesterday' : `${days} days ago`;
+  return days === 1 ? t('time.yesterday') : t('time.daysAgo', { n: days });
 }
 
 export function minutes(seconds) {
@@ -83,7 +84,7 @@ export function errorCard(error) {
 }
 
 export function subnav(base, items, current) {
-  return `<nav class="subnav" aria-label="Section">${items.map(([key, label]) =>
+  return `<nav class="subnav" aria-label="${esc(t('ui.section'))}">${items.map(([key, label]) =>
     `<a href="${base}/${key}"${key === current ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`;
 }
 
@@ -101,7 +102,7 @@ export function toast(message, tone = '') {
 
 // ---- confirm dialog -----------------------------------------------------------
 /** Resolves true when confirmed. `requireText` makes the user type a value first. */
-export function confirmDialog({ title, body = '', confirm = 'Confirm', danger = false, requireText = '' }) {
+export function confirmDialog({ title, body = '', confirm, danger = false, requireText = '' }) {
   return new Promise((resolve) => {
     const back = document.createElement('div');
     back.className = 'modal-back';
@@ -110,9 +111,9 @@ export function confirmDialog({ title, body = '', confirm = 'Confirm', danger = 
       <p class="muted">${body}</p>
       ${requireText ? `<input type="text" data-confirm-input placeholder="${esc(requireText)}" autocomplete="off">` : ''}
       <div class="row-actions">
-        <button type="button" class="ghost" data-cancel>Cancel</button>
+        <button type="button" class="ghost" data-cancel>${esc(t('ui.cancel'))}</button>
         <button type="button" class="${danger ? 'ghost danger-button' : 'primary inline'}" data-ok
-          ${requireText ? 'disabled' : ''}>${esc(confirm)}</button>
+          ${requireText ? 'disabled' : ''}>${esc(confirm || t('ui.confirm'))}</button>
       </div>
     </div>`;
     const previous = document.activeElement;
@@ -166,9 +167,9 @@ export function bindCopy(root) {
       const source = document.getElementById(button.dataset.copy);
       try {
         await navigator.clipboard.writeText((source && source.textContent) || '');
-        toast('Copied');
+        toast(t('ui.copied'));
       } catch {
-        toast('Select the text and copy it by hand', 'bad');
+        toast(t('ui.copyFail'), 'bad');
       }
     });
   });

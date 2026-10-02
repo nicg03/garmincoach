@@ -2,51 +2,48 @@
    Two steps when Garmin asks for a code; afterwards a status panel with
    Sync now, full history and Disconnect. */
 import { del, post } from '../core/api.js';
+import { t } from '../core/i18n.js';
 import { refreshStatus, state } from '../core/state.js';
 import { $, agoFromEpoch, busy, confirmDialog, esc, toast } from '../core/ui.js';
 
-const PRIVACY = `Your Garmin password goes to Garmin once and is never stored here.
-  We keep encrypted access tokens, use them only to read your training data and
-  write the workouts you schedule, and delete them when you disconnect.`;
-
 function statusLine(info) {
-  if (info.running) return '<span class="badge">Syncing now</span>';
-  if (info.needs_login) return '<span class="badge bad">Sign in again</span>';
-  if (info.last_error) return '<span class="badge warn">Last sync had a problem</span>';
-  return '<span class="badge ok">Connected</span>';
+  if (info.running) return `<span class="badge">${esc(t('garmin.syncing'))}</span>`;
+  if (info.needs_login) return `<span class="badge bad">${esc(t('garmin.signAgain'))}</span>`;
+  if (info.last_error) return `<span class="badge warn">${esc(t('garmin.problem'))}</span>`;
+  return `<span class="badge ok">${esc(t('garmin.connected'))}</span>`;
 }
 
 function resultLine(info) {
   const r = info.last_result;
-  if (!r) return info.running ? 'Fetching your recent weeks. This page fills in as it goes.' : 'No sync yet.';
-  const parts = [`${r.activities} activities`, `${r.days} days`];
+  if (!r) return info.running ? t('garmin.fetching') : t('garmin.noSync');
+  const parts = [t('garmin.activities', { n: r.activities }), t('garmin.days', { n: r.days })];
   if (r.history && (r.history.activities || r.history.days)) {
-    parts.push(`${r.history.activities + r.history.days} older records`);
+    parts.push(t('garmin.older', { n: r.history.activities + r.history.days }));
   }
-  if (r.written) parts.push(`${r.written} workouts sent`);
-  return `Last sync ${agoFromEpoch(info.last_sync)}: ${parts.join(', ')}.`;
+  if (r.written) parts.push(t('garmin.written', { n: r.written }));
+  return t('garmin.lastSync', { when: agoFromEpoch(info.last_sync), parts: parts.join(', ') });
 }
 
 function loginForm(info, message = '') {
   return `<form class="connect-form" data-login>
     ${message ? `<p class="error">${esc(message)}</p>` : ''}
-    <label class="field"><span>Garmin email</span>
+    <label class="field"><span>${esc(t('garmin.email'))}</span>
       <input type="email" name="email" autocomplete="username" required value="${esc(info.garmin_email || '')}"></label>
-    <label class="field"><span>Garmin password</span>
+    <label class="field"><span>${esc(t('garmin.password'))}</span>
       <input type="password" name="password" autocomplete="current-password" required></label>
-    <button class="primary" type="submit">Connect Garmin</button>
-    <p class="privacy-note">${PRIVACY}</p>
+    <button class="primary" type="submit">${esc(t('garmin.connect'))}</button>
+    <p class="privacy-note">${esc(t('garmin.privacy'))}</p>
   </form>`;
 }
 
 function mfaForm() {
   return `<form class="connect-form" data-mfa>
-    <p>Garmin sent you a verification code by email or text. Enter it to finish.</p>
-    <label class="field"><span>Code</span>
+    <p>${esc(t('garmin.mfa'))}</p>
+    <label class="field"><span>${esc(t('garmin.code'))}</span>
       <input name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
     <div class="row-actions">
-      <button class="primary inline" type="submit">Verify</button>
-      <button class="ghost" type="button" data-restart>Start again</button>
+      <button class="primary inline" type="submit">${esc(t('garmin.verify'))}</button>
+      <button class="ghost" type="button" data-restart>${esc(t('garmin.restart'))}</button>
     </div>
   </form>`;
 }
@@ -59,8 +56,7 @@ export function renderGarmin(host, { onChange = () => {} } = {}) {
   const info = state.status.garmin || { available: false, connected: false };
 
   if (!info.available) {
-    host.innerHTML = `<p class="muted">The direct Garmin connection isn't installed on this
-      server. Use the browser extension or the export zip below.</p>`;
+    host.innerHTML = `<p class="muted">${esc(t('garmin.unavailable'))}</p>`;
     return;
   }
 
@@ -70,7 +66,7 @@ export function renderGarmin(host, { onChange = () => {} } = {}) {
       event.preventDefault();
       const form = event.currentTarget;
       const button = $('button[type="submit"]', form);
-      busy(button, 'Signing in to Garmin…', async () => {
+      busy(button, t('garmin.signing'), async () => {
         const body = await post('/api/garmin/connect', {
           email: form.email.value, password: form.password.value,
         });
@@ -90,7 +86,7 @@ export function renderGarmin(host, { onChange = () => {} } = {}) {
     $('[data-restart]', form).addEventListener('click', () => showLogin());
     form.addEventListener('submit', (event) => {
       event.preventDefault();
-      busy($('button[type="submit"]', form), 'Verifying…', async () => {
+      busy($('button[type="submit"]', form), t('garmin.verifying'), async () => {
         await post('/api/garmin/mfa', { challenge_id: challenge, code: form.code.value });
         await done();
       });
@@ -98,7 +94,7 @@ export function renderGarmin(host, { onChange = () => {} } = {}) {
   };
 
   const done = async () => {
-    toast('Garmin connected. Your data is on its way.');
+    toast(t('garmin.connectedToast'));
     await refreshStatus();
     onChange();
   };
@@ -108,7 +104,7 @@ export function renderGarmin(host, { onChange = () => {} } = {}) {
     return;
   }
   if (info.needs_login) {
-    showLogin(info.last_error || 'Garmin asks you to sign in again.');
+    showLogin(info.last_error || t('garmin.askAgain'));
     return;
   }
 
@@ -116,32 +112,32 @@ export function renderGarmin(host, { onChange = () => {} } = {}) {
     <div class="card-head">${statusLine(info)}<span class="muted">${esc(info.garmin_email)}</span></div>
     <p class="muted">${resultLine(info)}</p>
     ${info.last_error ? `<p class="error">${esc(info.last_error)}</p>` : ''}
-    ${info.history_done ? '' : '<p class="muted">Older history loads a little at a time in the background.</p>'}
+    ${info.history_done ? '' : `<p class="muted">${esc(t('garmin.historyBg'))}</p>`}
     <div class="row-actions">
-      <button type="button" class="primary inline" data-sync ${info.running ? 'disabled' : ''}>Sync now</button>
-      ${info.history_done ? '' : `<button type="button" class="ghost" data-history ${info.running ? 'disabled' : ''}>Load all history now</button>`}
-      <button type="button" class="ghost danger-button" data-disconnect>Disconnect</button>
+      <button type="button" class="primary inline" data-sync ${info.running ? 'disabled' : ''}>${esc(t('garmin.syncNow'))}</button>
+      ${info.history_done ? '' : `<button type="button" class="ghost" data-history ${info.running ? 'disabled' : ''}>${esc(t('garmin.loadHistory'))}</button>`}
+      <button type="button" class="ghost danger-button" data-disconnect>${esc(t('garmin.disconnect'))}</button>
     </div>`;
 
   const kick = (history) => async () => {
     await post('/api/garmin/sync', { history });
-    toast(history ? 'Loading your full history. This can take a few minutes.' : 'Syncing with Garmin…');
+    toast(history ? t('garmin.loadingHistory') : t('garmin.syncingToast'));
     await refreshStatus();
     onChange();
   };
-  $('[data-sync]', host).addEventListener('click', (event) => busy(event.currentTarget, 'Starting…', kick(false)));
+  $('[data-sync]', host).addEventListener('click', (event) => busy(event.currentTarget, t('garmin.starting'), kick(false)));
   const history = $('[data-history]', host);
-  if (history) history.addEventListener('click', (event) => busy(event.currentTarget, 'Starting…', kick(true)));
+  if (history) history.addEventListener('click', (event) => busy(event.currentTarget, t('garmin.starting'), kick(true)));
   $('[data-disconnect]', host).addEventListener('click', async () => {
     const ok = await confirmDialog({
-      title: 'Disconnect Garmin?',
-      body: 'The stored tokens are deleted and syncing stops. Data already here stays.',
-      confirm: 'Disconnect',
+      title: t('garmin.disconnectTitle'),
+      body: t('garmin.disconnectBody'),
+      confirm: t('garmin.disconnect'),
       danger: true,
     });
     if (!ok) return;
     await del('/api/garmin/connect');
-    toast('Garmin disconnected');
+    toast(t('garmin.disconnected'));
     await refreshStatus();
     onChange();
   });

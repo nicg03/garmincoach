@@ -1,21 +1,22 @@
 /* The headline numbers, split into Load and Recovery so Form is not sitting
    next to Sleep with no context. Shared by Today, Insights and an athlete page. */
 import { info } from '../core/glossary.js';
+import { t } from '../core/i18n.js';
 import { esc, fmt, signed, tile } from '../core/ui.js';
 
 export function formTone(form) {
   if (form === null || form === undefined) return ['', ''];
-  if (form < -25) return ['bad', 'deep in the hole'];
-  if (form < -8) return ['warn', 'building'];
-  return ['good', 'fresh'];
+  if (form < -25) return ['bad', t('metric.deep')];
+  if (form < -8) return ['warn', t('metric.building')];
+  return ['good', t('metric.fresh')];
 }
 
 export function acwrTone(acwr) {
-  if (acwr === null || acwr === undefined) return ['', 'acute vs chronic load'];
-  if (acwr > 1.5) return ['bad', 'ramping up fast'];
-  if (acwr > 1.3) return ['warn', 'above the sweet spot'];
-  if (acwr < 0.8) return ['warn', 'detraining'];
-  return ['good', 'in the sweet spot'];
+  if (acwr === null || acwr === undefined) return ['', t('metric.acwrHint')];
+  if (acwr > 1.5) return ['bad', t('metric.ramping')];
+  if (acwr > 1.3) return ['warn', t('metric.above')];
+  if (acwr < 0.8) return ['warn', t('metric.detraining')];
+  return ['good', t('metric.sweet')];
 }
 
 function has(v) {
@@ -26,12 +27,12 @@ export function loadTiles(h = {}) {
   const [fTone, fNote] = formTone(h.form);
   const [rTone, rNote] = acwrTone(h.acwr);
   return [
-    tile('Form', fmt(h.form),
-      [fNote, has(h.ctl) ? `Fitness ${fmt(h.ctl)}` : '', has(h.atl) ? `Fatigue ${fmt(h.atl)}` : '']
+    tile(t('metric.form'), fmt(h.form),
+      [fNote, has(h.ctl) ? t('metric.fitness', { n: fmt(h.ctl) }) : '', has(h.atl) ? t('metric.fatigue', { n: fmt(h.atl) }) : '']
         .filter(Boolean).join(' · '), fTone, info('form')),
-    tile('Load ratio', fmt(h.acwr, 2), rNote, rTone, info('load_ratio')),
-    tile('This week', `${fmt(h.week_km, 1)} km`,
-      `${h.week_sessions || 0} sessions · load ${fmt(h.week_load)}`, '', info('week')),
+    tile(t('metric.loadRatio'), fmt(h.acwr, 2), rNote, rTone, info('load_ratio')),
+    tile(t('metric.week'), `${fmt(h.week_km, 1)} km`,
+      t('metric.weekMeta', { n: h.week_sessions || 0, load: fmt(h.week_load) }), '', info('week')),
   ].join('');
 }
 
@@ -39,22 +40,22 @@ export function recoveryTiles(h = {}) {
   const hrvTone = h.hrv_delta > 0 ? 'good' : h.hrv_delta < -3 ? 'warn' : '';
   const rhrTone = h.resting_hr_delta > 2 ? 'warn' : h.resting_hr_delta < 0 ? 'good' : '';
   return [
-    tile('HRV', fmt(h.hrv), has(h.hrv_delta) ? `${signed(h.hrv_delta)} vs baseline` : (h.hrv_status || ''),
+    tile(t('metric.hrv'), fmt(h.hrv), has(h.hrv_delta) ? t('metric.vsBaseline', { n: signed(h.hrv_delta) }) : (h.hrv_status || ''),
       hrvTone, info('hrv')),
-    tile('Resting HR', fmt(h.resting_hr),
-      has(h.resting_hr_delta) ? `${signed(h.resting_hr_delta)} vs baseline` : '', rhrTone, info('rhr')),
-    tile('Sleep', fmt(h.sleep_score), h.sleep_h ? `${fmt(h.sleep_h, 1)} h last night` : '', '', info('sleep')),
+    tile(t('metric.rhr'), fmt(h.resting_hr),
+      has(h.resting_hr_delta) ? t('metric.vsBaseline', { n: signed(h.resting_hr_delta) }) : '', rhrTone, info('rhr')),
+    tile(t('metric.sleep'), fmt(h.sleep_score), h.sleep_h ? t('metric.sleepHours', { n: fmt(h.sleep_h, 1) }) : '', '', info('sleep')),
   ].join('');
 }
 
 export function groupedHeadline(h = {}) {
   return `<div class="metric-groups">
     <section class="metric-group">
-      <p class="kicker">Load</p>
+      <p class="kicker">${esc(t('metric.loadKicker'))}</p>
       <div class="cards">${loadTiles(h)}</div>
     </section>
     <section class="metric-group">
-      <p class="kicker">Recovery</p>
+      <p class="kicker">${esc(t('metric.recoveryKicker'))}</p>
       <div class="cards">${recoveryTiles(h)}</div>
     </section>
   </div>`;
@@ -76,5 +77,7 @@ export function activityRows(activities, limit = 0) {
   }).join('');
 }
 
-export const ACTIVITY_HEAD = '<thead><tr><th>Date</th><th>Name</th><th>Sport</th><th>Time</th>' +
-  '<th>km</th><th>HR</th><th>Load</th></tr></thead>';
+export function activityHead() {
+  return `<thead><tr><th>${esc(t('act.date'))}</th><th>${esc(t('act.name'))}</th><th>${esc(t('act.sport'))}</th><th>${esc(t('act.time'))}</th>` +
+    `<th>${esc(t('act.km'))}</th><th>${esc(t('act.hr'))}</th><th>${esc(t('act.load'))}</th></tr></thead>`;
+}

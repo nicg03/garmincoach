@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111111">
-<meta name="description" content="Connect Garmin once. See readiness, today's session, and a training plan.">
+<meta name="description" content="Connect Garmin once. See readiness, today's session, and a training plan." data-i18n="meta.description" data-i18n-attr="content">
 <title>garmincoach</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/css/tokens.css?v=27">
-<link rel="stylesheet" href="/static/css/layout.css?v=27">
-<link rel="stylesheet" href="/static/css/components.css?v=27">
-<link rel="stylesheet" href="/static/css/landing.css?v=27">
+<link rel="stylesheet" href="/static/css/tokens.css?v=28">
+<link rel="stylesheet" href="/static/css/layout.css?v=28">
+<link rel="stylesheet" href="/static/css/components.css?v=28">
+<link rel="stylesheet" href="/static/css/landing.css?v=28">
 </head>
 <body>
 
@@ -20,150 +20,150 @@
   <header class="landing-bar">
     <div class="landing-bar-inner">
       <a class="brand" href="#">garmin<span>coach</span></a>
-      <nav class="landing-nav" aria-label="Landing">
-        <a href="#product">Product</a>
-        <a href="#how">How it works</a>
-        <a href="#coaches">Coaches</a>
-        <a href="#faq">FAQ</a>
+      <nav class="landing-nav" aria-label="Landing" data-i18n="landing.nav" data-i18n-attr="aria-label">
+        <a href="#product" data-i18n="landing.product">Product</a>
+        <a href="#how" data-i18n="landing.how">How it works</a>
+        <a href="#coaches" data-i18n="landing.coaches">Coaches</a>
+        <a href="#faq" data-i18n="landing.faq">FAQ</a>
       </nav>
       <div class="landing-bar-actions">
-        <button type="button" class="link" data-landing-signin>Sign in</button>
-        <button type="button" class="ghost small" data-landing-signup>Create account</button>
+        <button type="button" class="link" data-landing-signin data-i18n="landing.signIn">Sign in</button>
+        <button type="button" class="ghost small" data-landing-signup data-i18n="landing.createAccount">Create account</button>
       </div>
     </div>
   </header>
 
   <section class="landing-hero">
-    <h1>Garmin data, a plan, and a coach.</h1>
-    <p>Connect Garmin once. Each morning: readiness, today's session, and whether fitness is moving the right way.</p>
+    <h1 data-i18n="landing.heroTitle">Garmin data, a plan, and a coach.</h1>
+    <p data-i18n="landing.heroBody">Connect Garmin once. Each morning: readiness, today's session, and whether fitness is moving the right way.</p>
     <div class="landing-hero-actions">
-      <button type="button" class="primary inline" data-landing-signup>Get started</button>
-      <button type="button" class="link" data-landing-signin>Sign in</button>
+      <button type="button" class="primary inline" data-landing-signup data-i18n="landing.getStarted">Get started</button>
+      <button type="button" class="link" data-landing-signin data-i18n="landing.signIn">Sign in</button>
     </div>
   </section>
 
   <section class="landing-section landing-preview-section" id="product">
-    <p class="landing-kicker">Product</p>
-    <h2>What you see after the first sync</h2>
-    <p class="landing-lede">Numbers against your own baseline — not a generic zone chart. The watch stays the place you train.</p>
+    <p class="landing-kicker" data-i18n="landing.productKicker">Product</p>
+    <h2 data-i18n="landing.productTitle">What you see after the first sync</h2>
+    <p class="landing-lede" data-i18n="landing.productLede">Numbers against your own baseline — not a generic zone chart. The watch stays the place you train.</p>
     <div class="landing-preview" aria-hidden="true">
       <div class="landing-preview-chrome">
         <span class="brand">garmin<span>coach</span></span>
-        <span class="landing-preview-page">Today</span>
-        <span class="pill ok">Synced 12 min ago</span>
+        <span class="landing-preview-page" data-i18n="landing.previewPage">Today</span>
+        <span class="pill ok" data-i18n="landing.previewSynced">Synced 12 min ago</span>
       </div>
       <div class="landing-preview-body">
         <section class="readiness good">
           <div>
-            <p class="kicker">Friday 2 October</p>
-            <p class="verdict">Ready to train</p>
-            <p class="muted">HRV +4 · resting HR −2 · sleep 86</p>
+            <p class="kicker" data-i18n="landing.previewDate">Friday 2 October</p>
+            <p class="verdict" data-i18n="landing.previewVerdict">Ready to train</p>
+            <p class="muted" data-i18n="landing.previewDeltas">HRV +4 · resting HR −2 · sleep 86</p>
           </div>
           <div class="session">
-            <p class="kicker">Today's session</p>
-            <h3>Threshold 8×3 min</h3>
-            <p class="muted">8.0 km · 3:52–3:58 /km</p>
+            <p class="kicker" data-i18n="landing.previewSessionKicker">Today's session</p>
+            <h3 data-i18n="landing.previewSessionName">Threshold 8×3 min</h3>
+            <p class="muted" data-i18n="landing.previewSessionMeta">8.0 km · 3:52–3:58 /km</p>
             <div class="row-actions">
-              <span class="primary inline">Keep as planned</span>
-              <span class="ghost">Ease</span>
-              <span class="ghost">Swap</span>
-              <span class="ghost">Rest</span>
+              <span class="primary inline" data-i18n="landing.keep">Keep as planned</span>
+              <span class="ghost" data-i18n="landing.ease">Ease</span>
+              <span class="ghost" data-i18n="landing.swap">Swap</span>
+              <span class="ghost" data-i18n="landing.rest">Rest</span>
             </div>
           </div>
         </section>
         <div class="cards landing-preview-stats">
-          <div class="stat"><div class="label">Form</div><div class="value">+12</div><div class="note good">Fresh</div></div>
-          <div class="stat"><div class="label">HRV</div><div class="value">68</div><div class="note good">+4 vs usual</div></div>
-          <div class="stat"><div class="label">Sleep</div><div class="value">86</div><div class="note">7h 42m</div></div>
-          <div class="stat"><div class="label">Load</div><div class="value">54</div><div class="note">CTL 48</div></div>
+          <div class="stat"><div class="label" data-i18n="landing.statForm">Form</div><div class="value">+12</div><div class="note good" data-i18n="landing.fresh">Fresh</div></div>
+          <div class="stat"><div class="label" data-i18n="landing.statHrv">HRV</div><div class="value">68</div><div class="note good" data-i18n="landing.hrvNote">+4 vs usual</div></div>
+          <div class="stat"><div class="label" data-i18n="landing.statSleep">Sleep</div><div class="value">86</div><div class="note" data-i18n="landing.sleepNote">7h 42m</div></div>
+          <div class="stat"><div class="label" data-i18n="landing.statLoad">Load</div><div class="value">54</div><div class="note" data-i18n="landing.loadNote">CTL 48</div></div>
         </div>
       </div>
     </div>
 
     <div class="landing-features">
       <article class="landing-feature">
-        <p class="landing-kicker">Today</p>
-        <h3>Readiness first</h3>
-        <p>Keep, ease, swap or rest — plus the session on the calendar and the HRV / sleep deltas behind the call.</p>
+        <p class="landing-kicker" data-i18n="landing.featTodayKicker">Today</p>
+        <h3 data-i18n="landing.featTodayTitle">Readiness first</h3>
+        <p data-i18n="landing.featTodayBody">Keep, ease, swap or rest — plus the session on the calendar and the HRV / sleep deltas behind the call.</p>
       </article>
       <article class="landing-feature">
-        <p class="landing-kicker">Training</p>
-        <h3>Plans on the watch</h3>
-        <p>A block around a race, or a workout you build here. Paces and structure write through to Garmin.</p>
+        <p class="landing-kicker" data-i18n="landing.featTrainingKicker">Training</p>
+        <h3 data-i18n="landing.featTrainingTitle">Plans on the watch</h3>
+        <p data-i18n="landing.featTrainingBody">A block around a race, or a workout you build here. Paces and structure write through to Garmin.</p>
       </article>
       <article class="landing-feature">
-        <p class="landing-kicker">Insights</p>
-        <h3>Load, form, HRV</h3>
-        <p>Training load and recovery against your baseline, with activities you can open by range.</p>
+        <p class="landing-kicker" data-i18n="landing.featInsightsKicker">Insights</p>
+        <h3 data-i18n="landing.featInsightsTitle">Load, form, HRV</h3>
+        <p data-i18n="landing.featInsightsBody">Training load and recovery against your baseline, with activities you can open by range.</p>
       </article>
       <article class="landing-feature">
-        <p class="landing-kicker">Coaching</p>
-        <h3>AI, or a human</h3>
-        <p>Ask a coach that reads compact metrics. Link a person when you want notes and assigned sessions.</p>
+        <p class="landing-kicker" data-i18n="landing.featCoachingKicker">Coaching</p>
+        <h3 data-i18n="landing.featCoachingTitle">AI, or a human</h3>
+        <p data-i18n="landing.featCoachingBody">Ask a coach that reads compact metrics. Link a person when you want notes and assigned sessions.</p>
       </article>
     </div>
   </section>
 
   <section class="landing-section" id="how">
-    <p class="landing-kicker">How it works</p>
-    <h2>Connect once. The morning does the rest.</h2>
+    <p class="landing-kicker" data-i18n="landing.howKicker">How it works</p>
+    <h2 data-i18n="landing.howTitle">Connect once. The morning does the rest.</h2>
     <ol class="landing-steps">
       <li>
         <span class="landing-step-num">1</span>
-        <h3>Connect Garmin</h3>
-        <p>One sign-in. The password is used for that step and never stored — you keep an encrypted token you can revoke.</p>
+        <h3 data-i18n="landing.step1Title">Connect Garmin</h3>
+        <p data-i18n="landing.step1Body">One sign-in. The password is used for that step and never stored — you keep an encrypted token you can revoke.</p>
       </li>
       <li>
         <span class="landing-step-num">2</span>
-        <h3>Morning briefing</h3>
-        <p>Each day: how recovered you are, what the session is, and whether fitness is going the right way.</p>
+        <h3 data-i18n="landing.step2Title">Morning briefing</h3>
+        <p data-i18n="landing.step2Body">Each day: how recovered you are, what the session is, and whether fitness is going the right way.</p>
       </li>
       <li>
         <span class="landing-step-num">3</span>
-        <h3>Workouts on the watch</h3>
-        <p>Race-plan paces and workouts you build here land on Garmin, so the hard work stays on the road.</p>
+        <h3 data-i18n="landing.step3Title">Workouts on the watch</h3>
+        <p data-i18n="landing.step3Body">Race-plan paces and workouts you build here land on Garmin, so the hard work stays on the road.</p>
       </li>
     </ol>
-    <p class="landing-note">If the server cannot reach Garmin, a browser extension or Garmin's official export zip still feed the same pipeline.</p>
+    <p class="landing-note" data-i18n="landing.howNote">If the server cannot reach Garmin, a browser extension or Garmin's official export zip still feed the same pipeline.</p>
   </section>
 
   <section class="landing-section" id="coaches">
-    <p class="landing-kicker">Accounts</p>
-    <h2>Train alone, or coach a roster.</h2>
-    <p class="landing-lede">You pick athlete or coach when you create the account. Same product; extra room if you work with other people.</p>
+    <p class="landing-kicker" data-i18n="landing.accountsKicker">Accounts</p>
+    <h2 data-i18n="landing.accountsTitle">Train alone, or coach a roster.</h2>
+    <p class="landing-lede" data-i18n="landing.accountsLede">You pick athlete or coach when you create the account. Same product; extra room if you work with other people.</p>
     <div class="landing-split">
       <article class="landing-split-card">
-        <p class="landing-kicker">Athlete</p>
-        <h3>Your numbers, your plan</h3>
-        <p>Today, Training, Insights and the AI coach. Link a human coach when you want notes and assigned sessions.</p>
+        <p class="landing-kicker" data-i18n="landing.athleteKicker">Athlete</p>
+        <h3 data-i18n="landing.athleteTitle">Your numbers, your plan</h3>
+        <p data-i18n="landing.athleteBody">Today, Training, Insights and the AI coach. Link a human coach when you want notes and assigned sessions.</p>
       </article>
       <article class="landing-split-card">
-        <p class="landing-kicker">Coach</p>
-        <h3>A roster, not a shared login</h3>
-        <p>Inbox for requests, a read-only view of each athlete, notes, and workouts you can assign.</p>
+        <p class="landing-kicker" data-i18n="landing.coachKicker">Coach</p>
+        <h3 data-i18n="landing.coachTitle">A roster, not a shared login</h3>
+        <p data-i18n="landing.coachBody">Inbox for requests, a read-only view of each athlete, notes, and workouts you can assign.</p>
       </article>
     </div>
   </section>
 
   <section class="landing-section" id="faq">
-    <p class="landing-kicker">FAQ</p>
-    <h2>Things worth knowing</h2>
+    <p class="landing-kicker" data-i18n="landing.faqKicker">FAQ</p>
+    <h2 data-i18n="landing.faqTitle">Things worth knowing</h2>
     <div class="landing-faq">
       <details>
-        <summary>Are accounts separate?</summary>
-        <p>Yes. Each account has its own password, sync and history. Queries always include a user id, so one person's numbers cannot appear on another person's charts.</p>
+        <summary data-i18n="landing.faq1q">Are accounts separate?</summary>
+        <p data-i18n="landing.faq1a">Yes. Each account has its own password, sync and history. Queries always include a user id, so one person's numbers cannot appear on another person's charts.</p>
       </details>
       <details>
-        <summary>Is the Garmin connection official?</summary>
-        <p>No. The site signs in the way Garmin's mobile app does. It works today, but it is unofficial. If a datacentre IP gets blocked, the browser extension and the official export zip keep working.</p>
+        <summary data-i18n="landing.faq2q">Is the Garmin connection official?</summary>
+        <p data-i18n="landing.faq2a">No. The site signs in the way Garmin's mobile app does. It works today, but it is unofficial. If a datacentre IP gets blocked, the browser extension and the official export zip keep working.</p>
       </details>
       <details>
-        <summary>What can a coach see?</summary>
-        <p>Only athletes who link to them. A coach gets a read-only view of that training, can leave notes and assign workouts. They do not get the password or the Garmin login.</p>
+        <summary data-i18n="landing.faq3q">What can a coach see?</summary>
+        <p data-i18n="landing.faq3a">Only athletes who link to them. A coach gets a read-only view of that training, can leave notes and assign workouts. They do not get the password or the Garmin login.</p>
       </details>
       <details>
-        <summary>How often does data update?</summary>
-        <p>Connected accounts sync every few hours. Opening the site can start a sync when the last one is stale. Older history comes in from Data sources.</p>
+        <summary data-i18n="landing.faq4q">How often does data update?</summary>
+        <p data-i18n="landing.faq4a">Connected accounts sync every few hours. Opening the site can start a sync when the last one is stale. Older history comes in from Data sources.</p>
       </details>
     </div>
   </section>
@@ -171,34 +171,34 @@
   <footer class="landing-foot">
     <a class="brand" href="#">garmin<span>coach</span></a>
     <p class="landing-foot-links">
-      <button type="button" class="link" data-landing-signin>Sign in</button>
-      <button type="button" class="link" data-landing-signup>Create account</button>
+      <button type="button" class="link" data-landing-signin data-i18n="landing.signIn">Sign in</button>
+      <button type="button" class="link" data-landing-signup data-i18n="landing.createAccount">Create account</button>
     </p>
   </footer>
 
   <div class="landing-auth-layer" id="landing-auth-layer">
-    <button type="button" class="landing-auth-close" data-landing-close aria-label="Close">×</button>
+    <button type="button" class="landing-auth-close" data-landing-close aria-label="Close" data-i18n="gate.close" data-i18n-attr="aria-label">×</button>
     <form class="gate-card" id="gate-form" novalidate>
       <div class="gate-tabs" role="tablist" id="gate-tabs">
-        <button type="button" role="tab" data-mode="login" aria-selected="true">Sign in</button>
-        <button type="button" role="tab" data-mode="signup" aria-selected="false">Create account</button>
+        <button type="button" role="tab" data-mode="login" aria-selected="true" data-i18n="gate.signIn">Sign in</button>
+        <button type="button" role="tab" data-mode="signup" aria-selected="false" data-i18n="gate.create">Create account</button>
       </div>
-      <label for="email">Email</label>
+      <label for="email" data-i18n="gate.email">Email</label>
       <input type="email" id="email" autocomplete="email" required>
-      <label for="password">Password</label>
+      <label for="password" data-i18n="gate.password">Password</label>
       <input type="password" id="password" autocomplete="current-password" required>
       <p class="field-hint hidden" id="password-hint"></p>
       <div id="gate-role" class="role-picker hidden">
-        <p class="muted">I am</p>
+        <p class="muted" data-i18n="gate.iAm">I am</p>
         <div class="role-options">
-          <label class="role-option"><input type="radio" name="gate-role" value="athlete" checked><span>An athlete</span></label>
-          <label class="role-option"><input type="radio" name="gate-role" value="coach"><span>A coach</span></label>
+          <label class="role-option"><input type="radio" name="gate-role" value="athlete" checked><span data-i18n="gate.athlete">An athlete</span></label>
+          <label class="role-option"><input type="radio" name="gate-role" value="coach"><span data-i18n="gate.coach">A coach</span></label>
         </div>
       </div>
       <button class="primary" type="submit" id="gate-submit">Sign in</button>
       <p class="error" id="gate-error" role="alert"></p>
       <!-- Forgot password: parked until a Resend domain exists (ACCOUNT_EMAILS). -->
-      <p class="gate-alt hidden" id="gate-alt"><button type="button" class="link" id="gate-forgot">Forgot password?</button></p>
+      <p class="gate-alt hidden" id="gate-alt"><button type="button" class="link" id="gate-forgot" data-i18n="gate.forgot">Forgot password?</button></p>
     </form>
     <section class="gate-card hidden" id="gate-panel" aria-live="polite"></section>
   </div>
@@ -207,7 +207,7 @@
 <div id="shell" class="shell hidden">
   <aside class="sidebar">
     <a class="brand" href="#/">garmin<span>coach</span></a>
-    <nav class="nav" id="nav" aria-label="Main"></nav>
+    <nav class="nav" id="nav" aria-label="Main" data-i18n="shell.main" data-i18n-attr="aria-label"></nav>
     <div class="sidebar-foot" id="sidebar-foot"></div>
   </aside>
   <header class="topbar">
@@ -216,24 +216,24 @@
     <div class="topbar-actions">
       <a class="pill" id="sync-pill" href="#/settings/sources">…</a>
       <div class="menu" id="user-menu">
-        <button type="button" id="user-button" aria-haspopup="true" aria-expanded="false" aria-label="Account menu"></button>
+        <button type="button" id="user-button" aria-haspopup="true" aria-expanded="false" aria-label="Account menu" data-i18n="shell.accountMenu" data-i18n-attr="aria-label"></button>
         <div class="menu-list hidden" id="user-list" role="menu">
           <div class="who" id="user-who"></div>
-          <a href="#/guide" role="menuitem">Guide</a>
-          <a href="#/settings/profile" role="menuitem">Settings</a>
-          <a href="#/settings/sources" role="menuitem">Data sources</a>
-          <button type="button" role="menuitem" id="btn-logout">Sign out</button>
+          <a href="#/guide" role="menuitem" data-i18n="shell.guide">Guide</a>
+          <a href="#/settings/profile" role="menuitem" data-i18n="shell.settings">Settings</a>
+          <a href="#/settings/sources" role="menuitem" data-i18n="shell.sources">Data sources</a>
+          <button type="button" role="menuitem" id="btn-logout" data-i18n="shell.signOut">Sign out</button>
         </div>
       </div>
     </div>
   </header>
   <main id="main"><div class="page"><div id="account-banner"></div><div id="view"></div></div></main>
-  <nav class="bottombar" id="bottombar" aria-label="Main"></nav>
+  <nav class="bottombar" id="bottombar" aria-label="Main" data-i18n="shell.main" data-i18n-attr="aria-label"></nav>
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script type="module" src="/static/js/main.js?v=27"></script>
+<script type="module" src="/static/js/main.js?v=28"></script>
 </body>
 </html>

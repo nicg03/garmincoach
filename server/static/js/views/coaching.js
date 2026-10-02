@@ -2,23 +2,27 @@
    coach they're linked to. The conversation survives moving between pages. */
 import { api, post } from '../core/api.js';
 import { info } from '../core/glossary.js';
+import { t } from '../core/i18n.js';
 import { rerender } from '../core/router.js';
 import { cached, invalidate, role, state } from '../core/state.js';
 import { $, $$, busy, emptyState, esc, loadingPage, markdown, skeleton, subnav, toast } from '../core/ui.js';
 
-const SUGGESTIONS = [
-  'How is my training load trending, and is recovery keeping up?',
-  'What should I do this week?',
-  'Am I sleeping enough for this volume?',
-  'Anything in the last month that looks like a warning sign?',
-];
+function suggestions() {
+  return [t('coach.q1'), t('coach.q2'), t('coach.q3'), t('coach.q4')];
+}
+
+function linkLabel(status) {
+  const key = `link.${status}`;
+  const label = t(key);
+  return label === key ? status : label;
+}
 
 export async function render(root, ctx = {}) {
-  const tabs = role() === 'athlete' ? [['ai', 'AI coach'], ['coach', 'My coach']] : [['ai', 'AI coach']];
+  const tabs = role() === 'athlete' ? [['ai', t('coach.ai')], ['coach', t('coach.mine')]] : [['ai', t('coach.ai')]];
   const wanted = (ctx.path || [])[0];
   const sub = tabs.some(([key]) => key === wanted) ? wanted : 'ai';
   root.innerHTML = `<div class="page-head">${tabs.length > 1 ? subnav('#/coaching', tabs, sub) : ''}
-    <a class="btn-link" href="#/guide/coaching">Guide</a></div><div data-sub>${loadingPage()}</div>`;
+    <a class="btn-link" href="#/guide/coaching">${esc(t('coach.guide'))}</a></div><div data-sub>${loadingPage()}</div>`;
   const host = $('[data-sub]', root);
   if (sub === 'coach') return humanCoach(host);
   return aiCoach(host);
@@ -28,42 +32,41 @@ export async function render(root, ctx = {}) {
 function aiCoach(host) {
   const status = state.status;
   if (!status.coach) {
-    host.innerHTML = `<div class="card">${emptyState('The AI coach is off on this site',
-      'The site owner needs to add an OpenAI or Anthropic API key. Everything else works without it.')}</div>`;
+    host.innerHTML = `<div class="card">${emptyState(esc(t('coach.off')), esc(t('coach.offHelp')))}</div>`;
     return;
   }
   const limit = status.coach_limit
-    ? `<span class="muted">${status.coach_used} of ${status.coach_limit} questions used today</span>` : '';
+    ? `<span class="muted">${esc(t('coach.used', { used: status.coach_used, limit: status.coach_limit }))}</span>` : '';
   host.innerHTML = `
     <div class="card">
-      <div class="card-head"><h2>Briefing ${info('coaching_ai')}</h2>
-        <button type="button" class="ghost small" data-rebrief>Refresh</button></div>
+      <div class="card-head"><h2>${esc(t('coach.briefing'))} ${info('coaching_ai')}</h2>
+        <button type="button" class="ghost small" data-rebrief>${esc(t('coach.refresh'))}</button></div>
       <div class="prose" data-brief>${skeleton('line', 4)}</div>
     </div>
     <div class="card">
-      <div class="card-head"><h2>Ask the coach</h2>${limit}</div>
-      <p class="muted">It reads your recent load, recovery, plan and races before answering.</p>
+      <div class="card-head"><h2>${esc(t('coach.askTitle'))}</h2>${limit}</div>
+      <p class="muted">${esc(t('coach.askHelp'))}</p>
       <div class="chat" data-chat aria-live="polite"></div>
-      <div class="suggestions" data-suggestions>${SUGGESTIONS.map((s) =>
+      <div class="suggestions" data-suggestions>${suggestions().map((s) =>
         `<button type="button">${esc(s)}</button>`).join('')}</div>
       <form class="composer" data-chat-form>
-        <textarea rows="2" placeholder="Ask anything about your training… (Ctrl/⌘+Enter to send)"
-          aria-label="Your question" data-question></textarea>
-        <button class="primary" type="submit" data-ask>Ask</button>
+        <textarea rows="2" placeholder="${esc(t('coach.placeholder'))}"
+          aria-label="${esc(t('coach.question'))}" data-question></textarea>
+        <button class="primary" type="submit" data-ask>${esc(t('coach.ask'))}</button>
       </form>
     </div>`;
 
   const brief = $('[data-brief]', host);
   const loadBrief = (refresh) => {
     if (refresh) invalidate('brief');
-    brief.innerHTML = '<p class="muted">Reading your last few weeks…</p>';
+    brief.innerHTML = `<p class="muted">${esc(t('coach.reading'))}</p>`;
     return cached('brief', () => api('/api/brief' + (refresh ? '?refresh=1' : '')))
       .then((body) => { brief.innerHTML = markdown(body.text || ''); })
       .catch((error) => { brief.innerHTML = `<p class="error">${esc(error.message)}</p>`; });
   };
   loadBrief(false);
   const rebrief = $('[data-rebrief]', host);
-  rebrief.addEventListener('click', () => busy(rebrief, 'Refreshing…', () => loadBrief(true)));
+  rebrief.addEventListener('click', () => busy(rebrief, t('coach.refreshing'), () => loadBrief(true)));
 
   const chat = $('[data-chat]', host);
   const question = $('[data-question]', host);
@@ -98,7 +101,7 @@ function aiCoach(host) {
       });
       if (!response.ok || !response.body) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(body.detail || body.error || 'The coach is unavailable.');
+        throw new Error(body.detail || body.error || t('coach.unavailable'));
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -153,36 +156,36 @@ async function humanCoach(host) {
   host.innerHTML = `
     <div class="grid-2">
       <div class="card">
-        <div class="card-head"><h2>Your coaches ${info('coaching_human')}</h2></div>
+        <div class="card-head"><h2>${esc(t('coach.yours'))} ${info('coaching_human')}</h2></div>
         ${links.length ? links.map((l) => `<div class="list-row"><span>${esc(l.coach_email)}</span>
-          <span class="badge ${l.status === 'accepted' ? 'ok' : l.status === 'rejected' ? 'bad' : ''}">${esc(l.status)}</span></div>`).join('')
-          : '<p class="muted">No coach yet. A coach sees your data and plan, can leave notes and assign workouts.</p>'}
+          <span class="badge ${l.status === 'accepted' ? 'ok' : l.status === 'rejected' ? 'bad' : ''}">${esc(linkLabel(l.status))}</span></div>`).join('')
+          : `<p class="muted">${esc(t('coach.none'))}</p>`}
       </div>
       <div class="card">
-        <div class="card-head"><h2>Add a coach</h2></div>
+        <div class="card-head"><h2>${esc(t('coach.add'))}</h2></div>
         <form class="connect-form" data-lookup>
-          <label class="field"><span>Your coach's email</span>
+          <label class="field"><span>${esc(t('coach.email'))}</span>
             <input type="email" name="email" required placeholder="coach@example.com"></label>
-          <button class="primary" type="submit">Send request</button>
-          <p class="muted">They need a coach account on this site. You can remove access any time.</p>
+          <button class="primary" type="submit">${esc(t('coach.send'))}</button>
+          <p class="muted">${esc(t('coach.addHelp'))}</p>
         </form>
       </div>
     </div>
     <div class="card">
-      <div class="card-head"><h2>Notes from your coach</h2></div>
+      <div class="card-head"><h2>${esc(t('coach.notes'))}</h2></div>
       ${notes.length ? notes.map((n) => `<div class="coach-note"><div class="meta"><span class="badge">${esc(n.kind)}</span>
         ${esc(n.coach_email)} · ${esc(n.created)}</div>${esc(n.text)}</div>`).join('')
-        : emptyState('Nothing yet', 'Comments and feedback from your coach show up here and on Today.')}
+        : emptyState(esc(t('coach.notesEmpty')), esc(t('coach.notesHelp')))}
     </div>`;
 
   const form = $('[data-lookup]', host);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    busy($('button[type="submit"]', form), 'Sending…', async () => {
+    busy($('button[type="submit"]', form), t('coach.sending'), async () => {
       const found = await api('/api/coaches/lookup?email=' + encodeURIComponent(form.email.value));
       await post('/api/coaching/request', { coach_id: found.id });
       invalidate('mine');
-      toast(`Request sent to ${found.email}`);
+      toast(t('coach.requestSent', { email: found.email }));
       rerender();
     });
   });

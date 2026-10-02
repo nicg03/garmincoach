@@ -5,6 +5,7 @@ import { mountBuilder } from '../components/workout-builder.js';
 import { api, del, post, scoped } from '../core/api.js';
 import { COLORS, baseOptions, draw } from '../core/charts.js';
 import { info } from '../core/glossary.js';
+import { t } from '../core/i18n.js';
 import { rerender } from '../core/router.js';
 import { cached, invalidate, state } from '../core/state.js';
 import {
@@ -12,16 +13,21 @@ import {
   todayIso, toast,
 } from '../core/ui.js';
 
-const TABS = [['calendar', 'Calendar'], ['races', 'Races'], ['workouts', 'Workouts']];
-const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+function tabs() {
+  return [['calendar', t('train.calendar')], ['races', t('train.races')], ['workouts', t('train.workouts')]];
+}
+function dow() {
+  return ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((key) => t(`day.${key}`));
+}
 
 export async function render(root, ctx = {}) {
   const athleteId = ctx.athleteId || null;
   const opts = { athleteId, readOnly: Boolean(ctx.readOnly), key: athleteId || '' };
   const wanted = (ctx.path || [])[0];
-  const sub = TABS.some(([key]) => key === wanted) ? wanted : 'calendar';
-  root.innerHTML = `<div class="page-head">${subnav(ctx.base || '#/training', TABS, sub)}
-    <a class="btn-link" href="#/guide/training">Guide</a></div><div data-sub>${loadingPage()}</div>`;
+  const items = tabs();
+  const sub = items.some(([key]) => key === wanted) ? wanted : 'calendar';
+  root.innerHTML = `<div class="page-head">${subnav(ctx.base || '#/training', items, sub)}
+    <a class="btn-link" href="#/guide/training">${esc(t('train.guide'))}</a></div><div data-sub>${loadingPage()}</div>`;
   const host = $('[data-sub]', root);
   if (sub === 'races') return races(host, opts);
   if (sub === 'workouts') return workouts(host, opts);
@@ -40,9 +46,9 @@ function sessionKind(s) {
 }
 
 function paceStatusLabel(status) {
-  if (status === 'too_fast') return 'faster than target';
-  if (status === 'too_slow') return 'slower than target';
-  if (status === 'on_target') return 'on target';
+  if (status === 'too_fast') return t('train.faster');
+  if (status === 'too_slow') return t('train.slower');
+  if (status === 'on_target') return t('train.onTarget');
   return status || '';
 }
 
@@ -66,16 +72,16 @@ function raceFeasibility(race, perf) {
   else if (parts.length === 2) goal = parts[0] * 60 + parts[1];
   if (!goal) return '';
   const pct = (goal - expected) / expected;
-  if (pct > 0.03) return ['ok', 'comfortable'];
-  if (pct > -0.03) return ['ok', 'on pace'];
-  if (pct > -0.08) return ['warn', 'stretch'];
-  return ['bad', 'ambitious'];
+  if (pct > 0.03) return ['ok', t('train.comfortable')];
+  if (pct > -0.03) return ['ok', t('train.onPace')];
+  if (pct > -0.08) return ['warn', t('train.stretch')];
+  return ['bad', t('train.ambitious')];
 }
 
 // ---- calendar -----------------------------------------------------------------
 function paceBoard(paces, perf) {
   const bands = paces.bands || {};
-  const rows = [['easy', 'Easy'], ['marathon', 'M'], ['threshold', 'T'], ['interval', 'I'], ['rep', 'R'], ['goal', 'Goal']];
+  const rows = [['easy', t('pace.easy')], ['marathon', t('pace.m')], ['threshold', t('pace.t')], ['interval', t('pace.i')], ['rep', t('pace.r')], ['goal', t('pace.goal')]];
   const chips = rows.map(([key, label]) => {
     const b = bands[key] || {};
     const mid = b.mid || paces[key];
@@ -87,9 +93,9 @@ function paceBoard(paces, perf) {
   if (!chips) return '';
   const from = (perf && perf.vdot_from) || {};
   const source = paces.note || (paces.source === 'vdot' && from.mark
-    ? `From VDOT ${fmt(paces.vdot, 1)} (${from.mark} ${from.time || ''}). Easy is a range; T/I/R are ± a few s/km.`
-    : (paces.source ? `From ${paces.source}.` : ''));
-  return `<div class="card"><div class="card-head"><h2>Training paces ${info('paces')}</h2></div>
+    ? t('train.pacesFromVdot', { vdot: fmt(paces.vdot, 1), mark: from.mark, time: from.time || '' })
+    : (paces.source ? t('train.pacesFrom', { source: paces.source }) : ''));
+  return `<div class="card"><div class="card-head"><h2>${esc(t('train.paces'))} ${info('paces')}</h2></div>
     <div class="pace-board">${chips}</div><p class="muted">${esc(source)}</p></div>`;
 }
 
@@ -110,12 +116,12 @@ function paceInsights(body) {
   const recHtml = rec
     ? `<div class="insight-rec"><p>${esc(rec.summary)}</p>
         <div class="row-actions">
-          <button type="button" class="primary inline" data-insight="accept">Accept new paces</button>
-          <button type="button" class="ghost" data-insight="dismiss">Keep current</button>
-        </div><p class="muted">Nothing changes until you accept.</p></div>`
-    : '<p class="muted">Quality days are inside the planned range, or there aren\'t enough sessions with splits to suggest a change.</p>';
-  return `<div class="card pace-insights"><div class="card-head"><h2>Pace check ${info('pace_check')}</h2></div>
-    <p class="muted">Completed quality sessions against the range that was on the watch.</p>
+          <button type="button" class="primary inline" data-insight="accept">${esc(t('train.acceptPaces'))}</button>
+          <button type="button" class="ghost" data-insight="dismiss">${esc(t('train.keepPaces'))}</button>
+        </div><p class="muted">${esc(t('train.acceptHint'))}</p></div>`
+    : `<p class="muted">${esc(t('train.paceEmpty'))}</p>`;
+  return `<div class="card pace-insights"><div class="card-head"><h2>${esc(t('train.paceCheck'))} ${info('pace_check')}</h2></div>
+    <p class="muted">${esc(t('train.paceHelp'))}</p>
     <div class="insight-list">${bars}</div>${recHtml}</div>`;
 }
 
@@ -134,7 +140,7 @@ function weekCalendar(plan) {
   return [...groups.entries()].map(([key, list]) => {
     const byDow = {};
     list.forEach((s) => { byDow[(new Date(s.date + 'T00:00:00').getDay() + 6) % 7] = s; });
-    const cells = DOW.map((label, i) => {
+    const cells = dow().map((label, i) => {
       const s = byDow[i];
       if (!s) return `<div class="day-cell empty"><span class="dow">${label}</span><span class="nm">—</span></div>`;
       const wo = s.workout || {};
@@ -145,13 +151,13 @@ function weekCalendar(plan) {
         <span class="dow">${label} ${s.date.slice(8)}</span>
         <span class="nm">${esc(wo.name || sessionKind(s))}</span>
         <span class="meta">${esc([km, pace].filter(Boolean).join(' · '))}</span>
-        ${s.assigned_by ? '<span class="badge">coach</span>' : ''}
-        ${s.state === 'skipped' ? '<span class="badge warn">skipped</span>' : ''}
+        ${s.assigned_by ? `<span class="badge">${esc(t('train.coachBadge'))}</span>` : ''}
+        ${s.state === 'skipped' ? `<span class="badge warn">${esc(t('train.skipped'))}</span>` : ''}
       </button>`;
     }).join('');
     const m = meta[key] || {};
     return `<div class="week-block${key === thisWeek ? ' current' : ''}" ${key === thisWeek ? 'data-current' : ''}>
-      <h3>Week of ${esc(longDate(key))}<span>${esc(m.phase || list[0].phase || '')}${m.target_km ? ` · ${fmt(m.target_km, 0)} km` : ''}</span></h3>
+      <h3>${esc(t('train.weekOf', { date: longDate(key) }))}<span>${esc(m.phase || list[0].phase || '')}${m.target_km ? ` · ${fmt(m.target_km, 0)} km` : ''}</span></h3>
       <div class="week-grid">${cells}</div>
     </div>`;
   }).join('');
@@ -161,7 +167,7 @@ function stepRows(steps) {
   const rows = [];
   (steps || []).forEach((st) => {
     if (st.kind === 'repeat') {
-      rows.push(`<tr><td colspan="3"><strong>${st.times}× set</strong></td></tr>`);
+      rows.push(`<tr><td colspan="3"><strong>${esc(t('train.repeatSet', { n: st.times }))}</strong></td></tr>`);
       rows.push(...stepRows(st.steps || []));
       return;
     }
@@ -179,23 +185,26 @@ function stepRows(steps) {
 
 function sessionSheet(session, readOnly) {
   const wo = session.workout || {};
-  const done = session.completed_pace
-    ? `<p class="muted">Done at ${esc(session.completed_pace)} vs ${esc(session.target_pace || 'target')}
-        (${esc(paceStatusLabel(session.pace_status))})</p>` : '';
+    const done = session.completed_pace
+    ? `<p class="muted">${esc(t('train.doneAt', {
+      pace: session.completed_pace,
+      target: session.target_pace || t('train.target'),
+      status: paceStatusLabel(session.pace_status),
+    }))}</p>` : '';
   return `<div class="card-head"><h2>${esc(wo.name || sessionKind(session))}</h2>
       <span class="muted">${esc(longDate(session.date))}</span></div>
-    ${session.assigned_by ? '<span class="badge">from the coach</span>' : ''}
+    ${session.assigned_by ? `<span class="badge">${esc(t('train.fromTheCoach'))}</span>` : ''}
     <p class="muted">${esc(session.purpose || wo.purpose || '')}</p>
     <p>${esc(session.description || wo.description || '')}</p>
     ${done}
     <div class="scroll"><table class="session-steps">
-      <thead><tr><th>Step</th><th>Duration</th><th>Target</th></tr></thead>
-      <tbody>${stepRows(wo.steps).join('') || '<tr><td colspan="3">No structure.</td></tr>'}</tbody>
+      <thead><tr><th>${esc(t('train.step'))}</th><th>${esc(t('train.duration'))}</th><th>${esc(t('train.target'))}</th></tr></thead>
+      <tbody>${stepRows(wo.steps).join('') || `<tr><td colspan="3">${esc(t('train.noStructure'))}</td></tr>`}</tbody>
     </table></div>
     ${readOnly ? '' : `<div class="row-actions">
-      <button type="button" class="ghost" data-op="ease">Make it easy</button>
-      <button type="button" class="ghost" data-op="rest">Turn into rest</button>
-      <button type="button" class="ghost" data-op="skip">Skip</button>
+      <button type="button" class="ghost" data-op="ease">${esc(t('train.makeEasy'))}</button>
+      <button type="button" class="ghost" data-op="rest">${esc(t('train.turnRest'))}</button>
+      <button type="button" class="ghost" data-op="skip">${esc(t('train.skip'))}</button>
     </div>`}`;
 }
 
@@ -205,9 +214,9 @@ function drawProjected(canvas, series) {
     data: {
       labels: series.map((r) => shortDate(r.date)),
       datasets: [
-        { label: 'Load', data: series.map((r) => r.load), borderColor: COLORS.load, backgroundColor: COLORS.load, fill: true, tension: .2, pointRadius: 0 },
-        { label: 'Fatigue', data: series.map((r) => r.atl), borderColor: COLORS.atl, tension: .3, pointRadius: 0 },
-        { label: 'Fitness', data: series.map((r) => r.ctl), borderColor: COLORS.ctl, tension: .3, pointRadius: 0 },
+        { label: t('chart.load'), data: series.map((r) => r.load), borderColor: COLORS.load, backgroundColor: COLORS.load, fill: true, tension: .2, pointRadius: 0 },
+        { label: t('chart.fatigue'), data: series.map((r) => r.atl), borderColor: COLORS.atl, tension: .3, pointRadius: 0 },
+        { label: t('chart.fitness'), data: series.map((r) => r.ctl), borderColor: COLORS.ctl, tension: .3, pointRadius: 0 },
       ],
     },
     options: baseOptions(),
@@ -223,11 +232,10 @@ async function calendar(host, opts) {
   ]);
   const plan = planBody.plan;
   if (!plan) {
-    host.innerHTML = emptyState('No training plan yet',
-      readOnly ? 'Nothing planned for this athlete yet.'
-        : 'Add a race and generate a plan that builds to it, or schedule a single workout.',
-      readOnly ? '' : '<a class="primary inline" href="#/training/races">Plan for a race</a> ' +
-        '<a class="ghost small" href="#/training/workouts">Build a workout</a>');
+    host.innerHTML = emptyState(esc(t('train.noPlan')),
+      esc(readOnly ? t('train.noPlanCoach') : t('train.noPlanHelp')),
+      readOnly ? '' : `<a class="primary inline" href="#/training/races">${esc(t('today.planRace'))}</a> ` +
+        `<a class="ghost small" href="#/training/workouts">${esc(t('today.build'))}</a>`);
     return;
   }
   const h = plan.headline || {};
@@ -239,30 +247,30 @@ async function calendar(host, opts) {
   host.innerHTML = `
     <div class="card">
       <div class="card-head">
-        <h2>${esc(oneOff ? 'Scheduled workouts' : (plan.name || h.race || 'Training plan'))}
-          <span class="badge ${active ? 'ok' : ''}">${active ? 'on the watch' : 'draft'}</span></h2>
+        <h2>${esc(oneOff ? t('train.scheduled') : (plan.name || h.race || t('train.planFallback')))}
+          <span class="badge ${active ? 'ok' : ''}">${esc(active ? t('train.onWatch') : t('train.draft'))}</span></h2>
         ${readOnly || oneOff ? '' : `<button type="button" class="${active ? 'ghost' : 'primary inline'}" data-activate>
-          ${active ? 'Resend to watch' : 'Send to watch'}</button>`}
+          ${esc(active ? t('train.resend') : t('train.send'))}</button>`}
       </div>
       ${plan.rationale ? `<p class="muted">${esc(plan.rationale)}</p>` : ''}
-      ${oneOff ? `<p class="muted">Single sessions without a race plan.${readOnly ? '' :
-        ' <a class="btn-link" href="#/training/races">Build a plan for a race</a>'}</p>` : `<div class="cards">
-        ${tile('Weeks', fmt(h.weeks), h.short_block ? `short vs ${h.ideal_weeks} ideal` : (h.family || ''))}
-        ${tile('Sessions', fmt(h.sessions), adh.planned ? `${adh.completed}/${adh.planned} done` +
-          (adh.skipped ? `, ${adh.skipped} skipped` : '') : '', '', info('adherence'))}
-        ${tile('VDOT', fmt(h.vdot, 1), '', '', info('vdot'))}
-        ${tile('Peak km/week', fmt(h.weekly_km_peak), `now ${fmt(h.weekly_km_now)}`)}
-        ${tile('Fitness at race', fmt(h.ctl_at_race), `now ${fmt(h.ctl_now)}`, '', info('fitness'))}
+      ${oneOff ? `<p class="muted">${esc(t('train.oneOff'))}${readOnly ? '' :
+        ` <a class="btn-link" href="#/training/races">${esc(t('train.buildRace'))}</a>`}</p>` : `<div class="cards">
+        ${tile(t('train.weeks'), fmt(h.weeks), h.short_block ? t('train.shortBlock', { n: h.ideal_weeks }) : (h.family || ''))}
+        ${tile(t('train.sessions'), fmt(h.sessions), adh.planned ? t('train.sessionsDone', { done: adh.completed, planned: adh.planned }) +
+          (adh.skipped ? `, ${t('train.sessionsSkipped', { n: adh.skipped })}` : '') : '', '', info('adherence'))}
+        ${tile(t('train.vdot'), fmt(h.vdot, 1), '', '', info('vdot'))}
+        ${tile(t('train.peak'), fmt(h.weekly_km_peak), t('train.peakNow', { n: fmt(h.weekly_km_now) }))}
+        ${tile(t('train.fitnessRace'), fmt(h.ctl_at_race), t('train.peakNow', { n: fmt(h.ctl_now) }), '', info('fitness'))}
       </div>`}
     </div>
     ${paceBoard(h.paces || perf.paces || {}, perf)}
     ${readOnly ? '' : paceInsights(insightsBody)}
     <div class="card">
-      <div class="card-head"><h2>Weeks</h2><span class="muted">Tap a day for the details</span></div>
+      <div class="card-head"><h2>${esc(t('train.weeksTitle'))}</h2><span class="muted">${esc(t('train.tapDay'))}</span></div>
       <div data-weeks>${weekCalendar(plan)}</div>
     </div>
     <div class="card session-sheet hidden" data-sheet></div>
-    ${(plan.projected || []).length ? `<div class="card"><div class="card-head"><h2>Projected load ${info('projected')}</h2></div>
+    ${(plan.projected || []).length ? `<div class="card"><div class="card-head"><h2>${esc(t('train.projected'))} ${info('projected')}</h2></div>
       <div class="chart"><canvas id="chart-projected"></canvas></div></div>` : ''}`;
 
   const canvas = $('#chart-projected', host);
@@ -280,7 +288,7 @@ async function calendar(host, opts) {
       $$('[data-op]', sheet).forEach((op) => op.addEventListener('click', () => busy(op, '…', async () => {
         await post(`/api/plan/${plan.id}/patch`, { op: op.dataset.op, id: session.id });
         invalidate('plan', 'decide');
-        toast('Session updated');
+        toast(t('train.sessionUpdated'));
         rerender();
       })));
     });
@@ -289,7 +297,7 @@ async function calendar(host, opts) {
   $$('[data-insight]', host).forEach((button) => button.addEventListener('click', () => busy(button, '…', async () => {
     await post('/api/insights', { action: button.dataset.insight });
     invalidate('plan', 'insights');
-    toast(button.dataset.insight === 'accept' ? 'New paces applied' : 'Keeping current paces');
+    toast(button.dataset.insight === 'accept' ? t('train.pacesApplied') : t('train.pacesKept'));
     rerender();
   })));
 
@@ -297,18 +305,16 @@ async function calendar(host, opts) {
   if (activate) {
     activate.addEventListener('click', async () => {
       const ok = await confirmDialog({
-        title: 'Send the next two weeks to Garmin?',
-        body: g.connected
-          ? 'The workouts go to your Garmin calendar now, and later ones follow as they come up.'
-          : 'The browser extension writes them to Garmin at its next sync.',
-        confirm: 'Send to watch',
+        title: t('train.sendTitle'),
+        body: g.connected ? t('train.sendConnected') : t('train.sendExtension'),
+        confirm: t('train.send'),
       });
       if (!ok) return;
-      await busy(activate, 'Sending…', async () => {
+      await busy(activate, t('train.sending'), async () => {
         await post(`/api/plan/${plan.id}/activate`);
         invalidate('plan', 'decide');
         if (g.connected && !g.needs_login) await post('/api/garmin/sync', {}).catch(() => {});
-        toast(g.connected ? 'Plan sent. Workouts are on their way to Garmin.' : 'Plan queued for the next extension sync.');
+        toast(g.connected ? t('train.sentConnected') : t('train.sentQueued'));
         rerender();
       });
     });
@@ -332,49 +338,48 @@ async function races(host, opts) {
       <td>${r.distance_m ? fmt(r.distance_m / 1000, 1) + ' km' : ''}</td>
       <td>${esc(r.goal_time || '')}</td>
       <td>${fit ? `<span class="badge ${fit[0]}">${fit[1]}</span>` : ''}</td>
-      ${readOnly ? '' : `<td>${r.date <= today ? `<button type="button" class="ghost small" data-review="${esc(r.id)}">Review</button>` : ''}
-        <button type="button" class="ghost small" data-remove="${esc(r.id)}" data-name="${esc(r.name)}">Remove</button></td>`}
+      ${readOnly ? '' : `<td>${r.date <= today ? `<button type="button" class="ghost small" data-review="${esc(r.id)}">${esc(t('train.review'))}</button>` : ''}
+        <button type="button" class="ghost small" data-remove="${esc(r.id)}" data-name="${esc(r.name)}">${esc(t('train.remove'))}</button></td>`}
     </tr>`;
   }).join('');
 
   host.innerHTML = `
     <div class="card">
-      <div class="card-head"><h2>Races</h2></div>
+      <div class="card-head"><h2>${esc(t('train.races'))}</h2></div>
       ${list.length ? `<div class="scroll"><table>
-        <thead><tr><th>Date</th><th>Race</th><th>Priority</th><th>Distance</th><th>Goal</th>
-          <th>Goal vs fitness ${info('goal')}</th>${readOnly ? '' : '<th></th>'}</tr></thead>
+        <thead><tr><th>${esc(t('train.date'))}</th><th>${esc(t('train.race'))}</th><th>${esc(t('train.priority'))}</th><th>${esc(t('train.distance'))}</th><th>${esc(t('train.goal'))}</th>
+          <th>${esc(t('train.goalVs'))} ${info('goal')}</th>${readOnly ? '' : '<th></th>'}</tr></thead>
         <tbody>${rows}</tbody></table></div>`
-        : emptyState('No races yet', readOnly ? '' : 'Add your next race below.')}
+        : emptyState(esc(t('train.noRaces')), readOnly ? '' : esc(t('train.noRacesHelp')))}
       <p class="muted" data-review-out aria-live="polite"></p>
     </div>
     ${readOnly ? '' : `
     <div class="card">
-      <div class="card-head"><h2>Add a race</h2></div>
+      <div class="card-head"><h2>${esc(t('train.addRace'))}</h2></div>
       <form class="form-grid" data-race-form>
-        <label class="field"><span>Name</span><input name="name" required placeholder="City half marathon"></label>
-        <label class="field"><span>Date</span><input name="date" type="date" required min="${today}"></label>
-        <label class="field"><span>Distance</span><select name="distance">
-          <option value="5000">5k</option><option value="10000">10k</option>
-          <option value="21097" selected>Half marathon</option><option value="42195">Marathon</option>
+        <label class="field"><span>${esc(t('train.name'))}</span><input name="name" required placeholder="${esc(t('train.namePh'))}"></label>
+        <label class="field"><span>${esc(t('train.date'))}</span><input name="date" type="date" required min="${today}"></label>
+        <label class="field"><span>${esc(t('train.distance'))}</span><select name="distance">
+          <option value="5000">${esc(t('train.dist5'))}</option><option value="10000">${esc(t('train.dist10'))}</option>
+          <option value="21097" selected>${esc(t('train.distHalf'))}</option><option value="42195">${esc(t('train.distMara'))}</option>
         </select></label>
-        <label class="field"><span>Goal time</span><input name="goal" placeholder="1:45:00"></label>
-        <label class="field"><span>Priority</span><select name="priority">
-          <option value="A" selected>A (main goal)</option><option value="B">B</option><option value="C">C</option>
+        <label class="field"><span>${esc(t('train.goalTime'))}</span><input name="goal" placeholder="1:45:00"></label>
+        <label class="field"><span>${esc(t('train.priority'))}</span><select name="priority">
+          <option value="A" selected>${esc(t('train.priorityA'))}</option><option value="B">B</option><option value="C">C</option>
         </select></label>
-        <div class="row-actions"><button class="primary inline" type="submit">Add race</button></div>
+        <div class="row-actions"><button class="primary inline" type="submit">${esc(t('train.addRaceBtn'))}</button></div>
       </form>
     </div>
     <div class="card">
-      <div class="card-head"><h2>Build a plan</h2></div>
+      <div class="card-head"><h2>${esc(t('train.buildPlan'))}</h2></div>
       ${upcoming.length ? `<form class="form-grid" data-plan-form>
-        <label class="field"><span>Race</span><select name="race">${upcoming.map((r) =>
+        <label class="field"><span>${esc(t('train.race'))}</span><select name="race">${upcoming.map((r) =>
           `<option value="${esc(r.id)}">${esc(r.name)} (${esc(longDate(r.date))})</option>`).join('')}</select></label>
-        <label class="field"><span>Constraints (optional)</span>
-          <input name="notes" placeholder="Tuesdays off, at most 5 days a week…"></label>
-        <div class="row-actions"><button class="primary inline" type="submit">Generate plan</button></div>
-        <p class="muted">Uses your fitness, availability (Settings → Profile) and recent load.
-          The plan stays a draft until you send it to your watch.</p>
-      </form>` : '<p class="muted">Add an upcoming race first.</p>'}
+        <label class="field"><span>${esc(t('train.constraints'))}</span>
+          <input name="notes" placeholder="${esc(t('train.constraintsPh'))}"></label>
+        <div class="row-actions"><button class="primary inline" type="submit">${esc(t('train.generate'))}</button></div>
+        <p class="muted">${esc(t('train.generateHelp'))}</p>
+      </form>` : `<p class="muted">${esc(t('train.addUpcoming'))}</p>`}
     </div>`}`;
 
   if (readOnly) return;
@@ -384,23 +389,23 @@ async function races(host, opts) {
     const r = review.result || {};
     const f = review.feasibility || {};
     const splits = (review.splits || []).map((s) => `${s.label}: ${s.pace || ''}`).join(' · ');
-    out.innerHTML = `<strong>${esc((review.race && review.race.name) || 'Race')}</strong>: goal ${esc(r.goal || '—')},
-      actual ${esc(r.actual || 'not raced yet')}${r.vs_goal ? `, ${esc(r.vs_goal)}` : ''}` +
-      (f.label ? `. ${esc(f.label)}` : '') + (splits ? `. Splits: ${esc(splits)}` : '');
+    out.innerHTML = `<strong>${esc((review.race && review.race.name) || t('train.race'))}</strong>: ${esc(t('train.reviewLine', { goal: r.goal || '—', actual: r.actual || t('train.notRaced') }))}` +
+      (r.vs_goal ? `, ${esc(r.vs_goal)}` : '') +
+      (f.label ? `. ${esc(f.label)}` : '') + (splits ? `. ${esc(t('train.splits'))}: ${esc(splits)}` : '');
   })));
   $$('[data-remove]', host).forEach((button) => button.addEventListener('click', async () => {
-    const ok = await confirmDialog({ title: `Remove ${button.dataset.name}?`, confirm: 'Remove', danger: true });
+    const ok = await confirmDialog({ title: t('train.removeTitle', { name: button.dataset.name }), confirm: t('train.remove'), danger: true });
     if (!ok) return;
     await del(`/api/races/${button.dataset.remove}`);
     invalidate('races');
-    toast('Race removed');
+    toast(t('train.raceRemoved'));
     rerender();
   }));
 
   $('[data-race-form]', host).addEventListener('submit', (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    busy($('button[type="submit"]', form), 'Adding…', async () => {
+    busy($('button[type="submit"]', form), t('train.adding'), async () => {
       await post('/api/races', {
         name: form.name.value,
         date: form.date.value,
@@ -409,7 +414,7 @@ async function races(host, opts) {
         priority: form.priority.value,
       });
       invalidate('races');
-      toast('Race added');
+      toast(t('train.raceAdded'));
       rerender();
     });
   });
@@ -418,13 +423,13 @@ async function races(host, opts) {
   if (planForm) {
     planForm.addEventListener('submit', (event) => {
       event.preventDefault();
-      busy($('button[type="submit"]', planForm), 'Building your plan…', async () => {
+      busy($('button[type="submit"]', planForm), t('train.building'), async () => {
         const notes = planForm.notes.value;
         await post('/api/plan/generate', {
           race_id: planForm.race.value, notes, extras: ['strength'], adjust: Boolean(notes),
         });
         invalidate('plan', 'decide', 'insights');
-        toast('Plan ready. Review it, then send it to your watch.');
+        toast(t('train.planReady'));
         location.hash = '#/training/calendar';
       });
     });
@@ -437,12 +442,12 @@ function workouts(host, opts) {
     mountBuilder(host, {
       athleteId: opts.athleteId,
       library: false,
-      title: 'Assign a workout',
-      intro: 'It lands in the athlete\'s calendar marked as from you, and goes to their watch at their next sync.',
+      title: t('train.assignTitle'),
+      intro: t('train.assignIntro'),
     });
     return;
   }
   mountBuilder(host, {
-    intro: 'Put a single session on your Garmin calendar, or save it to reuse later.',
+    intro: t('train.workoutIntro'),
   });
 }

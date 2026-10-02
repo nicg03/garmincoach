@@ -99,7 +99,17 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+class RevalidatedStatic(StaticFiles):
+    """JS and CSS must revalidate. Module imports are not covered by the ?v= on main.js."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if path.endswith((".js", ".css", ".html")):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", RevalidatedStatic(directory=STATIC_DIR), name="static")
 
 
 def _range(days: int | None, frm: str | None, to: str | None) -> tuple[str, str]:

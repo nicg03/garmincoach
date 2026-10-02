@@ -1,28 +1,27 @@
 /* The other ways in: the browser extension and Garmin's export zip. */
+import { t } from '../core/i18n.js';
 import { refreshStatus } from '../core/state.js';
 import { $, esc, toast } from '../core/ui.js';
 
 export function extensionHtml(idPrefix = 'ext') {
   return `<ol class="steps">
-      <li><a class="btn-link" href="/extension.zip">Download the extension</a>, unzip it, open
-        <code>chrome://extensions</code>, turn on <em>Developer mode</em> and click <em>Load unpacked</em>.</li>
-      <li>Keep Garmin Connect signed in in the same browser.</li>
-      <li>With this site open, click the extension icon and press <strong>Connect</strong>. It
-        recognises the site by itself; if it asks, paste this address:</li>
+      <li><a class="btn-link" href="/extension.zip">${esc(t('import.step1a'))}</a>${esc(t('import.step1b'))}
+        <code>chrome://extensions</code>${esc(t('import.step1c'))} <em>${esc(t('import.step1d'))}</em> ${esc(t('import.step1e'))} <em>${esc(t('import.step1f'))}</em>.</li>
+      <li>${esc(t('import.step2'))}</li>
+      <li>${esc(t('import.step3'))}</li>
     </ol>
     <div class="cmd" style="margin-top:8px">
       <pre id="${idPrefix}-origin">${esc(location.origin)}</pre>
-      <button type="button" class="ghost" data-copy="${idPrefix}-origin">Copy</button>
+      <button type="button" class="ghost" data-copy="${idPrefix}-origin">${esc(t('ui.copy'))}</button>
     </div>`;
 }
 
 export function dropzoneHtml() {
-  return `<div class="dropzone" data-drop tabindex="0" role="button" aria-label="Import a Garmin export zip">
-      <strong>Drop Garmin's export zip here</strong>
-      <p class="muted">Garmin: Account → Data Management → Export Your Data. When the email
-        arrives, drop the zip here. Years of history in one go.</p>
+  return `<div class="dropzone" data-drop tabindex="0" role="button" aria-label="${esc(t('import.dropLabel'))}">
+      <strong>${esc(t('import.drop'))}</strong>
+      <p class="muted">${esc(t('import.dropHelp'))}</p>
       <input type="file" accept=".zip,application/zip" hidden data-file>
-      <button type="button" class="ghost" data-browse>Choose a zip</button>
+      <button type="button" class="ghost" data-browse>${esc(t('import.choose'))}</button>
       <p class="muted" data-import-status aria-live="polite"></p>
     </div>`;
 }
@@ -30,10 +29,10 @@ export function dropzoneHtml() {
 async function importExport(file, status, onDone) {
   const name = file.name || 'export.zip';
   if (!/\.zip$/i.test(name) && file.type !== 'application/zip') {
-    status.textContent = 'That needs to be the zip Garmin emailed you.';
+    status.textContent = t('import.needZip');
     return;
   }
-  status.textContent = `Reading ${name}… this can take a minute.`;
+  status.textContent = t('import.reading', { name });
   try {
     const response = await fetch('/api/import/garmin-export', {
       method: 'POST',
@@ -42,12 +41,14 @@ async function importExport(file, status, onDone) {
       body: file,
     });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || body.detail || 'Import failed.');
+    if (!response.ok) throw new Error(body.error || body.detail || t('import.failed'));
     const stored = body.stored || {};
     const report = body.report || {};
-    status.textContent = `Imported ${stored.activities || report.activities || 0} activities ` +
-      `and ${stored.days || report.days || 0} days.`;
-    toast('Export imported');
+    status.textContent = t('import.done', {
+      activities: stored.activities || report.activities || 0,
+      days: stored.days || report.days || 0,
+    });
+    toast(t('import.toast'));
     await refreshStatus();
     onDone();
   } catch (error) {

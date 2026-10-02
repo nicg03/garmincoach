@@ -3,18 +3,22 @@
 import { renderGarmin } from '../components/garmin-connect.js';
 import { bindDropzone, dropzoneHtml, extensionHtml } from '../components/importers.js';
 import { api, post, put } from '../core/api.js';
+import { getLocale, setLocale, t, translatePhrase } from '../core/i18n.js';
 import { rerender } from '../core/router.js';
 import { cached, invalidate, refreshStatus, state } from '../core/state.js';
 import { $, $$, bindCopy, busy, confirmDialog, esc, loadingPage, subnav, toast } from '../core/ui.js';
 
-const TABS = [['profile', 'Profile'], ['sources', 'Data sources'], ['account', 'Account']];
-const WEEKDAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
+function tabs() {
+  return [['profile', t('settings.profile')], ['sources', t('settings.sources')], ['account', t('settings.account')]];
+}
+const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const DEFAULT_MINUTES = { mon: 0, tue: 60, wed: 60, thu: 60, fri: 60, sat: 90, sun: 90 };
 
 export async function render(root, ctx = {}) {
   const wanted = (ctx.path || [])[0];
-  const sub = TABS.some(([key]) => key === wanted) ? wanted : 'profile';
-  root.innerHTML = `${subnav('#/settings', TABS, sub)}<div data-sub>${loadingPage()}</div>`;
+  const items = tabs();
+  const sub = items.some(([key]) => key === wanted) ? wanted : 'profile';
+  root.innerHTML = `${subnav('#/settings', items, sub)}<div data-sub>${loadingPage()}</div>`;
   const host = $('[data-sub]', root);
   if (sub === 'sources') return sources(host);
   if (sub === 'account') return account(host);
@@ -29,33 +33,44 @@ function rows(pairs) {
 async function profile(host) {
   const athlete = (await cached('athlete', () => api('/api/athlete'))) || {};
   const avail = athlete.availability || {};
+  const lang = getLocale();
   host.innerHTML = `
+    <div class="card">
+      <div class="card-head"><h2>${esc(t('settings.language'))}</h2></div>
+      <p class="muted">${esc(t('settings.languageHelp'))}</p>
+      <label class="field"><span>${esc(t('settings.language'))}</span>
+        <select data-locale aria-label="${esc(t('settings.language'))}">
+          <option value="en"${lang === 'en' ? ' selected' : ''}>English</option>
+          <option value="it"${lang === 'it' ? ' selected' : ''}>Italiano</option>
+        </select>
+      </label>
+    </div>
     <form class="card" data-athlete>
-      <div class="card-head"><h2>Weekly availability</h2></div>
-      <p class="muted">Minutes you can train each day. Plans put the long run and the quality
-        sessions on the days with the most time; 0 means a rest day.</p>
-      <div class="form-grid days">${WEEKDAYS.map(([key, label]) => {
+      <div class="card-head"><h2>${esc(t('settings.availability'))}</h2></div>
+      <p class="muted">${esc(t('settings.availabilityHelp'))}</p>
+      <div class="form-grid days">${WEEKDAYS.map((key) => {
         const mins = avail[key] && avail[key].minutes != null ? avail[key].minutes : DEFAULT_MINUTES[key];
-        return `<label class="field"><span>${label}</span>
+        return `<label class="field"><span>${esc(t('day.' + key))}</span>
           <input type="number" min="0" max="300" step="5" data-day="${key}" value="${mins}"></label>`;
       }).join('')}</div>
-      <div class="card-head" style="margin-top:18px"><h2>Body</h2></div>
-      <p class="muted">Optional. Leave blank and they're estimated from your activities.</p>
+      <div class="card-head" style="margin-top:18px"><h2>${esc(t('settings.body'))}</h2></div>
+      <p class="muted">${esc(t('settings.bodyHelp'))}</p>
       <div class="form-grid">
-        <label class="field"><span>Max heart rate</span>
+        <label class="field"><span>${esc(t('settings.hrMax'))}</span>
           <input type="number" name="hr_max" min="120" max="230" value="${esc(athlete.hr_max || '')}"></label>
-        <label class="field"><span>Resting heart rate</span>
+        <label class="field"><span>${esc(t('settings.hrRest'))}</span>
           <input type="number" name="hr_rest" min="30" max="100" value="${esc(athlete.hr_rest || '')}"></label>
-        <label class="field"><span>Weight (kg)</span>
+        <label class="field"><span>${esc(t('settings.weight'))}</span>
           <input type="number" name="weight_kg" min="30" max="200" step="0.1" value="${esc(athlete.weight_kg || '')}"></label>
       </div>
-      <div class="row-actions"><button class="primary inline" type="submit">Save profile</button></div>
+      <div class="row-actions"><button class="primary inline" type="submit">${esc(t('settings.saveProfile'))}</button></div>
     </form>`;
+  $('[data-locale]', host).addEventListener('change', (event) => setLocale(event.target.value));
 
   const form = $('[data-athlete]', host);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    busy($('button[type="submit"]', form), 'Saving…', async () => {
+    busy($('button[type="submit"]', form), t('settings.saving'), async () => {
       const availability = {};
       $$('[data-day]', form).forEach((input) => {
         availability[input.dataset.day] = { minutes: Number(input.value) || 0, sports: ['running'] };
@@ -67,7 +82,7 @@ async function profile(host) {
         weight_kg: Number(form.weight_kg.value) || null,
       });
       invalidate('athlete');
-      toast('Saved. New plans will use this.');
+      toast(t('settings.saved'));
     });
   });
 }
@@ -79,49 +94,49 @@ async function sources(host) {
   const repo = status.repo || state.site.repo || '';
   const last = status.last_ingest;
   const command = `python -m garmin_sync link --url ${location.origin}`;
+  const none = esc(t('settings.noneYet'));
   host.innerHTML = `
     <div class="card">
-      <div class="card-head"><h2>Garmin Connect</h2></div>
-      <p class="muted">The easiest way: sign in once and we sync every few hours by ourselves.</p>
+      <div class="card-head"><h2>${esc(t('settings.garmin'))}</h2></div>
+      <p class="muted">${esc(t('settings.garminHelp'))}</p>
       <div data-garmin></div>
     </div>
 
     <div class="card">
-      <div class="card-head"><h2>Your data</h2></div>
+      <div class="card-head"><h2>${esc(t('settings.yourData'))}</h2></div>
       ${rows([
-        ['Most recent day', status.last ? `${esc(status.last)} (${esc(status.ago)})` : 'none yet'],
-        ['Oldest day', esc(status.first || 'none yet')],
-        ['Days stored', esc(status.days || 0)],
-        ['Activities stored', esc(status.activities || 0)],
-        ['Last upload', last ? `${last.source === 'garmin' ? 'Garmin direct' : 'Extension or computer'}` +
-          `${last.at ? ` · ${esc(last.at)}` : ''}` : 'none yet'],
+        [t('settings.recentDay'), status.last ? `${esc(status.last)} (${esc(translatePhrase(status.ago))})` : none],
+        [t('settings.oldestDay'), esc(status.first || t('settings.noneYet'))],
+        [t('settings.daysStored'), esc(status.days || 0)],
+        [t('settings.activitiesStored'), esc(status.activities || 0)],
+        [t('settings.lastUpload'), last ? `${last.source === 'garmin' ? esc(t('settings.garminDirect')) : esc(t('settings.extOrComputer'))}` +
+          `${last.at ? ` · ${esc(last.at)}` : ''}` : none],
       ])}
     </div>
 
-    <h2 class="section-title">Other ways to import</h2>
+    <h2 class="section-title">${esc(t('settings.otherImport'))}</h2>
     <div class="grid-2">
       <div class="card">
-        <div class="card-head"><h2>Browser extension</h2></div>
-        <p class="muted">Syncs through your own Garmin Connect session in Chrome. Useful if the
-          direct connection is blocked, or if you'd rather not share a password.</p>
+        <div class="card-head"><h2>${esc(t('settings.extension'))}</h2></div>
+        <p class="muted">${esc(t('settings.extensionHelp'))}</p>
         ${extensionHtml('settings')}
       </div>
       <div class="card">
-        <div class="card-head"><h2>Garmin export zip</h2></div>
+        <div class="card-head"><h2>${esc(t('settings.exportZip'))}</h2></div>
         ${dropzoneHtml()}
       </div>
     </div>
 
     <details class="card advanced">
-      <summary>Advanced: sync from your computer</summary>
-      <p class="muted">The command-line client pushes data with the token below. Get it from
-        ${repo ? `<a href="${esc(repo)}" target="_blank" rel="noopener">the repository</a>` : 'the repository'}.</p>
+      <summary>${esc(t('settings.advanced'))}</summary>
+      <p class="muted">${esc(t('settings.advancedHelp'))}
+        ${repo ? `<a href="${esc(repo)}" target="_blank" rel="noopener">${esc(t('settings.repo'))}</a>` : esc(t('settings.repo'))}.</p>
       <div class="cmd"><pre id="link-command">${esc(command)}</pre>
-        <button type="button" class="ghost" data-copy="link-command">Copy</button></div>
-      <p class="muted">Sync token</p>
+        <button type="button" class="ghost" data-copy="link-command">${esc(t('ui.copy'))}</button></div>
+      <p class="muted">${esc(t('settings.syncToken'))}</p>
       <div class="token-row"><code class="token" id="sync-token">${esc(user.sync_token || '')}</code>
-        <button type="button" class="ghost" data-copy="sync-token">Copy</button>
-        <button type="button" class="ghost" data-rotate>New token</button></div>
+        <button type="button" class="ghost" data-copy="sync-token">${esc(t('ui.copy'))}</button>
+        <button type="button" class="ghost" data-rotate>${esc(t('settings.newToken'))}</button></div>
     </details>`;
 
   renderGarmin($('[data-garmin]', host), { onChange: rerender });
@@ -129,16 +144,16 @@ async function sources(host) {
   bindCopy(host);
   $('[data-rotate]', host).addEventListener('click', async (event) => {
     const ok = await confirmDialog({
-      title: 'Make a new sync token?',
-      body: 'The old token stops working straight away. Run the link command again on your computer, and reconnect the extension.',
-      confirm: 'Make new token',
+      title: t('settings.rotateTitle'),
+      body: t('settings.rotateBody'),
+      confirm: t('settings.rotateConfirm'),
       danger: true,
     });
     if (!ok) return;
     await busy(event.target, '…', async () => {
       const body = await post('/api/token/rotate');
       state.status.user.sync_token = body.sync_token;
-      toast('New token ready');
+      toast(t('settings.tokenReady'));
       rerender();
     });
   });
@@ -151,51 +166,52 @@ function account(host) {
   // Change password / email / verify: parked until a Resend domain exists.
   const emails = Boolean(state.site.email);
   const min = state.site.min_password || 8;
-  const verified = user.email_verified ? 'Yes'
-    : `Not yet · <button type="button" class="link" data-verify>Send link again</button>`;
+  const verified = user.email_verified ? esc(t('settings.yes'))
+    : `${esc(t('settings.notYet'))} · <button type="button" class="link" data-verify>${esc(t('settings.sendLinkAgain'))}</button>`;
   const pairs = [
-    ['Email', esc(user.email || '')],
-    ...(emails ? [['Email confirmed', verified]] : []),
-    ['Account type', user.role === 'coach' ? 'Coach' : 'Athlete'],
-    ['Member since', esc(user.since || '')],
+    [t('settings.email'), esc(user.email || '')],
+    ...(emails ? [[t('settings.emailConfirmed'), verified]] : []),
+    [t('settings.accountType'), user.role === 'coach' ? esc(t('settings.coach')) : esc(t('settings.athlete'))],
+    [t('settings.memberSince'), esc(user.since || '')],
   ];
-  if (status.coach_limit) pairs.push(['Coach questions today', `${status.coach_used} of ${status.coach_limit}`]);
+  if (status.coach_limit) {
+    pairs.push([t('settings.questionsToday'), esc(t('settings.questionsOf', { used: status.coach_used, limit: status.coach_limit }))]);
+  }
   host.innerHTML = `
     <div class="card">
-      <div class="card-head"><h2>Account</h2></div>
+      <div class="card-head"><h2>${esc(t('settings.account'))}</h2></div>
       ${rows(pairs)}
       <div class="row-actions" style="margin-top:14px">
-        <button type="button" class="ghost" data-logout>Sign out</button>
-        ${emails ? '<button type="button" class="ghost" data-revoke>Sign out other devices</button>' : ''}
+        <button type="button" class="ghost" data-logout>${esc(t('settings.signOut'))}</button>
+        ${emails ? `<button type="button" class="ghost" data-revoke>${esc(t('settings.signOutOthers'))}</button>` : ''}
       </div>
     </div>
     ${emails ? `
     <div class="grid-2">
       <form class="card" data-password novalidate>
-        <div class="card-head"><h2>Change password</h2></div>
-        <p class="muted">Other devices get signed out; this one stays signed in.</p>
-        <label class="field"><span>Current password</span>
+        <div class="card-head"><h2>${esc(t('settings.changePassword'))}</h2></div>
+        <p class="muted">${esc(t('settings.changePasswordHelp'))}</p>
+        <label class="field"><span>${esc(t('settings.currentPassword'))}</span>
           <input type="password" name="current" autocomplete="current-password" required></label>
-        <label class="field"><span>New password</span>
+        <label class="field"><span>${esc(t('settings.newPassword'))}</span>
           <input type="password" name="password" autocomplete="new-password" required></label>
-        <p class="field-hint">At least ${min} characters.</p>
-        <div class="row-actions"><button class="primary inline" type="submit">Change password</button></div>
+        <p class="field-hint">${esc(t('settings.minChars', { n: min }))}</p>
+        <div class="row-actions"><button class="primary inline" type="submit">${esc(t('settings.changePasswordBtn'))}</button></div>
       </form>
       <form class="card" data-email novalidate>
-        <div class="card-head"><h2>Change email</h2></div>
-        <p class="muted">We send a link to the new address. Nothing changes until you open it.</p>
-        <label class="field"><span>New email</span>
+        <div class="card-head"><h2>${esc(t('settings.changeEmail'))}</h2></div>
+        <p class="muted">${esc(t('settings.changeEmailHelp'))}</p>
+        <label class="field"><span>${esc(t('settings.newEmail'))}</span>
           <input type="email" name="email" autocomplete="email" required></label>
-        <label class="field"><span>Password</span>
+        <label class="field"><span>${esc(t('settings.password'))}</span>
           <input type="password" name="password" autocomplete="current-password" required></label>
-        <div class="row-actions"><button class="primary inline" type="submit">Send confirmation link</button></div>
+        <div class="row-actions"><button class="primary inline" type="submit">${esc(t('settings.sendConfirm'))}</button></div>
       </form>
     </div>` : ''}
     <div class="card danger">
-      <div class="card-head"><h2>Delete account</h2></div>
-      <p class="muted">Removes your account, every stored day and activity, plans, races, coach
-        links and the Garmin connection. This can't be undone.</p>
-      <button type="button" class="ghost danger-button" data-delete>Delete my account</button>
+      <div class="card-head"><h2>${esc(t('settings.delete'))}</h2></div>
+      <p class="muted">${esc(t('settings.deleteHelp'))}</p>
+      <button type="button" class="ghost danger-button" data-delete>${esc(t('settings.deleteBtn'))}</button>
     </div>`;
 
   $('[data-logout]', host).addEventListener('click', async () => {
@@ -205,23 +221,23 @@ function account(host) {
   });
   const resend = $('[data-verify]', host);
   if (resend) {
-    resend.addEventListener('click', () => busy(resend, 'Sending…', async () => {
+    resend.addEventListener('click', () => busy(resend, t('banner.sending'), async () => {
       await post('/api/email/verify/send');
-      toast(`Sent to ${user.email}`);
+      toast(t('settings.sentTo', { email: user.email }));
     }));
   }
   const revoke = $('[data-revoke]', host);
   if (revoke) {
     revoke.addEventListener('click', async (event) => {
       const ok = await confirmDialog({
-        title: 'Sign out other devices?',
-        body: 'Every other browser signed into this account has to sign in again. This one stays signed in.',
-        confirm: 'Sign them out',
+        title: t('settings.revokeTitle'),
+        body: t('settings.revokeBody'),
+        confirm: t('settings.revokeConfirm'),
       });
       if (!ok) return;
       await busy(event.target, '…', async () => {
         await post('/api/sessions/revoke');
-        toast('Other devices are signed out');
+        toast(t('settings.revoked'));
       });
     });
   }
@@ -230,13 +246,13 @@ function account(host) {
   if (passwordForm) {
     passwordForm.addEventListener('submit', (event) => {
       event.preventDefault();
-      busy($('button[type="submit"]', passwordForm), 'Saving…', async () => {
+      busy($('button[type="submit"]', passwordForm), t('settings.saving'), async () => {
         await post('/api/password/change', {
           current: passwordForm.current.value,
           password: passwordForm.password.value,
         });
         passwordForm.reset();
-        toast('Password changed. Other devices are signed out.');
+        toast(t('settings.passwordChanged'));
       });
     });
   }
@@ -245,22 +261,22 @@ function account(host) {
   if (emailForm) {
     emailForm.addEventListener('submit', (event) => {
       event.preventDefault();
-      busy($('button[type="submit"]', emailForm), 'Sending…', async () => {
+      busy($('button[type="submit"]', emailForm), t('banner.sending'), async () => {
         const body = await post('/api/email/change', {
           email: emailForm.email.value.trim(),
           password: emailForm.password.value,
         });
         emailForm.reset();
-        toast(`Link sent to ${body.pending}. Open it to finish the change.`);
+        toast(t('settings.linkSent', { email: body.pending }));
       });
     });
   }
 
   $('[data-delete]', host).addEventListener('click', async () => {
     const ok = await confirmDialog({
-      title: 'Delete your account?',
-      body: `Everything goes, for good. Type <strong>${esc(user.email)}</strong> to confirm.`,
-      confirm: 'Delete everything',
+      title: t('settings.deleteTitle'),
+      body: t('settings.deleteBody', { email: `<strong>${esc(user.email)}</strong>` }),
+      confirm: t('settings.deleteConfirm'),
       danger: true,
       requireText: user.email || '',
     });

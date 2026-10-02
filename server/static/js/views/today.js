@@ -1,8 +1,9 @@
 /* Today: am I ready, what's the session, and what changed. Everything else
    is one click away. */
-import { ACTIVITY_HEAD, activityRows, groupedHeadline } from '../components/headline.js';
+import { activityHead, activityRows, groupedHeadline } from '../components/headline.js';
 import { api, post } from '../core/api.js';
 import { info } from '../core/glossary.js';
+import { t, translatePhrase } from '../core/i18n.js';
 import { rerender } from '../core/router.js';
 import { cached, hasData, invalidate, role, state } from '../core/state.js';
 import {
@@ -10,19 +11,24 @@ import {
 } from '../core/ui.js';
 import { renderOnboarding } from './onboarding.js';
 
-const VERDICT = {
-  keep: ['good', 'Ready to train', 'Go ahead with today as planned.'],
-  ease: ['warn', 'Take it easy today', ''],
-  swap: ['warn', 'Move the hard work', ''],
-  rest: ['bad', 'Rest is the better call', ''],
-};
+function verdict(action) {
+  const map = {
+    keep: ['good', t('today.ready'), t('today.readyHelp')],
+    ease: ['warn', t('today.takeEasy'), ''],
+    swap: ['warn', t('today.moveHard'), ''],
+    rest: ['bad', t('today.restCall'), ''],
+  };
+  return map[action] || map.keep;
+}
 
-const ACTIONS = [
-  ['keep', 'Keep as planned'],
-  ['ease', 'Make it easy'],
-  ['swap', 'Swap days'],
-  ['rest', 'Rest'],
-];
+function actions() {
+  return [
+    ['keep', t('today.keep')],
+    ['ease', t('today.ease')],
+    ['swap', t('today.swap')],
+    ['rest', t('today.rest')],
+  ];
+}
 
 function historyBanner(status) {
   if (!status.first) return '';
@@ -30,18 +36,18 @@ function historyBanner(status) {
   const g = status.garmin || {};
   if (ageDays >= 500 || (g.connected && g.history_done)) return '';
   const action = g.connected
-    ? (g.running ? 'Older history is loading in the background.' : 'Older history loads a little at every sync.')
-    : 'Bring in older history from Data sources.';
-  return `<div class="banner"><strong>History from ${esc(status.first)}</strong>
-    <span class="muted">${action}</span><span class="spacer"></span>
-    <a class="btn-link" href="#/settings/sources">Data sources</a></div>`;
+    ? (g.running ? t('today.historyLoading') : t('today.historySync'))
+    : t('today.historySources');
+  return `<div class="banner"><strong>${esc(t('today.historyFrom', { date: status.first }))}</strong>
+    <span class="muted">${esc(action)}</span><span class="spacer"></span>
+    <a class="btn-link" href="#/settings/sources">${esc(t('today.sources'))}</a></div>`;
 }
 
 function deltaLine(h) {
   const parts = [];
-  if (h.hrv_delta != null) parts.push(`HRV ${signed(h.hrv_delta)} vs baseline`);
-  if (h.resting_hr_delta != null) parts.push(`resting HR ${signed(h.resting_hr_delta)}`);
-  if (h.sleep_score != null) parts.push(`sleep ${fmt(h.sleep_score)}`);
+  if (h.hrv_delta != null) parts.push(t('today.hrvDelta', { n: signed(h.hrv_delta) }));
+  if (h.resting_hr_delta != null) parts.push(t('today.rhrDelta', { n: signed(h.resting_hr_delta) }));
+  if (h.sleep_score != null) parts.push(t('today.sleepScore', { n: fmt(h.sleep_score) }));
   return parts.join(' · ');
 }
 
@@ -49,27 +55,27 @@ function sessionBlock(decision) {
   const session = decision && decision.session;
   if (!session) {
     return `<div class="session">
-      <p class="kicker">Today's session ${info('session')}</p>
-      <h3>Nothing planned</h3>
-      <p class="muted">Plan a block around a race or put a single workout on your watch.</p>
+      <p class="kicker">${esc(t('today.session'))} ${info('session')}</p>
+      <h3>${esc(t('today.nothing'))}</h3>
+      <p class="muted">${esc(t('today.nothingHelp'))}</p>
       <div class="row-actions">
-        <a class="ghost small" href="#/training/races">Plan for a race</a>
-        <a class="ghost small" href="#/training/workouts">Build a workout</a>
+        <a class="ghost small" href="#/training/races">${esc(t('today.planRace'))}</a>
+        <a class="ghost small" href="#/training/workouts">${esc(t('today.build'))}</a>
       </div>
     </div>`;
   }
   const wo = session.workout || {};
-  const name = wo.name || (session.kind || '').replace(/_/g, ' ') || 'Session';
+  const name = wo.name || (session.kind || '').replace(/_/g, ' ') || t('today.sessionFallback');
   const desc = session.description || wo.description || '';
   const km = session.distance_km != null ? `${fmt(session.distance_km, 1)} km` : '';
   const applied = decision.applied;
   return `<div class="session">
-    <p class="kicker">Today's session ${info('session')} ${session.assigned_by ? '<span class="badge">from your coach</span>' : ''}</p>
+    <p class="kicker">${esc(t('today.session'))} ${info('session')} ${session.assigned_by ? `<span class="badge">${esc(t('today.fromCoach'))}</span>` : ''}</p>
     <h3>${esc(name)}</h3>
     <p class="muted">${esc(desc || [km, (wo.targets && wo.targets.work) || ''].filter(Boolean).join(' · '))}</p>
-    ${applied ? `<p class="muted">You chose: <strong>${esc(applied)}</strong>.</p>` : ''}
+    ${applied ? `<p class="muted">${esc(t('today.youChose'))} <strong>${esc(applied)}</strong>.</p>` : ''}
     <div class="row-actions" data-actions>
-      ${ACTIONS.map(([key, label]) => `<button type="button" data-act="${key}"
+      ${actions().map(([key, label]) => `<button type="button" data-act="${key}"
         class="${key === (applied || decision.action) ? 'primary inline' : 'ghost'}">${label}</button>`).join('')}
     </div>
   </div>`;
@@ -78,17 +84,17 @@ function sessionBlock(decision) {
 function readinessCard(decision) {
   if (!decision) {
     return `<div class="readiness"><div>
-      <p class="kicker">Readiness ${info('readiness')}</p>
-      <p class="verdict">No read on today yet</p>
-      <p class="muted">Readiness needs a few mornings of HRV and resting heart rate.</p></div></div>`;
+      <p class="kicker">${esc(t('today.readiness'))} ${info('readiness')}</p>
+      <p class="verdict">${esc(t('today.noRead'))}</p>
+      <p class="muted">${esc(t('today.noReadHelp'))}</p></div></div>`;
   }
-  const [tone, verdict, fallback] = VERDICT[decision.action] || VERDICT.keep;
+  const [tone, label, fallback] = verdict(decision.action);
   const h = decision.headline || {};
-  return `<section class="readiness ${tone}" aria-label="Readiness">
+  return `<section class="readiness ${tone}" aria-label="${esc(t('today.readiness'))}">
     <div>
       <p class="kicker">${esc(longDate(todayIso()))} ${info('readiness')}</p>
-      <p class="verdict">${verdict}</p>
-      <p>${esc(decision.reason || fallback)}</p>
+      <p class="verdict">${esc(label)}</p>
+      <p>${esc(translatePhrase(decision.reason) || fallback)}</p>
       <p class="muted">${esc(deltaLine(h))}</p>
     </div>
     ${sessionBlock(decision)}
@@ -98,25 +104,25 @@ function readinessCard(decision) {
 function raceCard(races) {
   const next = (races || []).filter((r) => r.date >= todayIso()).sort((a, b) => a.date.localeCompare(b.date))[0];
   if (!next) {
-    return `<div class="card"><div class="card-head"><h2>Next race</h2></div>
-      ${emptyState('No race on the calendar', 'Add one and get a plan that builds to it.',
-        '<a class="ghost small" href="#/training/races">Add a race</a>')}</div>`;
+    return `<div class="card"><div class="card-head"><h2>${esc(t('today.nextRace'))}</h2></div>
+      ${emptyState(esc(t('today.noRace')), esc(t('today.noRaceHelp')),
+        `<a class="ghost small" href="#/training/races">${esc(t('today.addRace'))}</a>`)}</div>`;
   }
   const days = daysUntil(next.date);
-  return `<div class="card"><div class="card-head"><h2>Next race</h2>
-      <a class="btn-link" href="#/training/races">Races</a></div>
-    <div class="countdown">${days === 0 ? 'Today' : `${days} ${days === 1 ? 'day' : 'days'}`}</div>
+  return `<div class="card"><div class="card-head"><h2>${esc(t('today.nextRace'))}</h2>
+      <a class="btn-link" href="#/training/races">${esc(t('today.races'))}</a></div>
+    <div class="countdown">${days === 0 ? esc(t('time.today')) : esc(days === 1 ? t('time.day', { n: days }) : t('time.days', { n: days }))}</div>
     <p><strong>${esc(next.name)}</strong></p>
     <p class="muted">${esc(longDate(next.date))}${next.distance_m ? ` · ${fmt(next.distance_m / 1000, 1)} km` : ''}
-      ${next.goal_time ? ` · goal ${esc(next.goal_time)}` : ''}</p>
+      ${next.goal_time ? ` · ${esc(t('today.goal', { time: next.goal_time }))}` : ''}</p>
   </div>`;
 }
 
 function coachNoteCard(mine) {
   const note = mine && (mine.notes || [])[0];
   if (!note) return '';
-  return `<div class="card"><div class="card-head"><h2>From your coach</h2>
-      <a class="btn-link" href="#/coaching/coach">All notes</a></div>
+  return `<div class="card"><div class="card-head"><h2>${esc(t('today.fromCoachTitle'))}</h2>
+      <a class="btn-link" href="#/coaching/coach">${esc(t('today.allNotes'))}</a></div>
     <div class="coach-note"><div class="meta"><span class="badge">${esc(note.kind)}</span>
       ${esc(note.coach_email)} · ${esc(note.created)}</div>${esc(note.text)}</div></div>`;
 }
@@ -142,24 +148,24 @@ export async function render(root) {
     ${groupedHeadline(metrics.headline || {})}
     <div class="grid-2">
       ${raceCard(races.races)}
-      ${status.coach ? `<div class="card"><div class="card-head"><h2>Coach's read</h2>
-          <a class="btn-link" href="#/coaching/ai">Ask the coach</a></div>
+      ${status.coach ? `<div class="card"><div class="card-head"><h2>${esc(t('today.coachRead'))}</h2>
+          <a class="btn-link" href="#/coaching/ai">${esc(t('today.ask'))}</a></div>
           <div class="prose clamp" data-brief>${skeleton('line', 3)}</div></div>` : ''}
       ${coachNoteCard(mine)}
     </div>
-    <div class="card"><div class="card-head"><h2>Recent activities</h2>
-        <a class="btn-link" href="#/insights/activities">All activities</a></div>
-      <div class="scroll"><table>${ACTIVITY_HEAD}<tbody>${activityRows(recent, 5) ||
+    <div class="card"><div class="card-head"><h2>${esc(t('today.recent'))}</h2>
+        <a class="btn-link" href="#/insights/activities">${esc(t('today.allActivities'))}</a></div>
+      <div class="scroll"><table>${activityHead()}<tbody>${activityRows(recent, 5) ||
         `<tr><td colspan="7">${status.days
-          ? 'No recent activities — sync to bring them in.'
-          : 'Nothing here yet.'}</td></tr>`}</tbody></table></div>
+          ? esc(t('today.noActivities'))
+          : esc(t('today.empty'))}</td></tr>`}</tbody></table></div>
     </div>`;
 
   $$('[data-act]', root).forEach((button) => {
     button.addEventListener('click', () => busy(button, '…', async () => {
       await post('/api/day/decide', { action: button.dataset.act });
       invalidate('decide', 'plan');
-      toast(button.dataset.act === 'keep' ? 'Keeping today as planned' : 'Today updated');
+      toast(button.dataset.act === 'keep' ? t('today.kept') : t('today.updated'));
       rerender();
     }));
   });

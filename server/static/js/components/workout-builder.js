@@ -2,6 +2,7 @@
    coach's "Assign a workout". The steps live in a model and the inputs write
    into it, so nested repeats round-trip without re-reading the DOM. */
 import { api, post } from '../core/api.js';
+import { t } from '../core/i18n.js';
 import { invalidate, state } from '../core/state.js';
 import { $, $$, busy, esc, todayIso, toast } from '../core/ui.js';
 
@@ -10,7 +11,12 @@ const UNITS = [
   ['min', 'time', 'min'], ['s', 'time', 's'], ['m', 'distance', 'm'],
   ['km', 'distance', 'km'], ['reps', 'reps', ''],
 ];
-const TARGETS = [['hr_zone', 'HR zone'], ['pace', 'Pace'], ['power_zone', 'Power zone'], ['none', 'None']];
+function targets() {
+  return [['hr_zone', t('tgt.hr_zone')], ['pace', t('tgt.pace')], ['power_zone', t('tgt.power_zone')], ['none', t('tgt.none')]];
+}
+function kinds() {
+  return [['easy', t('wo.easy')], ['long', t('wo.long')], ['tempo', t('wo.tempo')], ['interval', t('wo.interval')], ['strength', t('wo.strength')], ['bike', t('wo.bike')], ['swim', t('wo.swim')]];
+}
 
 function step(intensity = 'active', value = 10, unit = 'min', target = { type: 'hr_zone', zone: 2 }) {
   const [, type, u] = UNITS.find(([key]) => key === unit) || UNITS[0];
@@ -41,29 +47,29 @@ function at(model, path) {
 function stepEditor(s, path) {
   if (s.kind === 'repeat') {
     return `<div class="repeat-box">
-      <label>Repeat <input type="number" min="1" max="30" value="${s.times || 4}" data-path="${path}" data-f="times"> times
-        <button type="button" class="ghost small" data-remove="${path}" aria-label="Remove repeat">Remove</button></label>
+      <label>${esc(t('wo.repeat'))} <input type="number" min="1" max="30" value="${s.times || 4}" data-path="${path}" data-f="times"> ${esc(t('wo.times'))}
+        <button type="button" class="ghost small" data-remove="${path}" aria-label="${esc(t('wo.removeRepeat'))}">${esc(t('wo.remove'))}</button></label>
       ${(s.steps || []).map((inner, j) => stepEditor(inner, `${path}.${j}`)).join('')}
-      <button type="button" class="link" data-add-inner="${path}">+ step in this repeat</button>
+      <button type="button" class="link" data-add-inner="${path}">${esc(t('wo.addInner'))}</button>
     </div>`;
   }
-  const t = s.target || {};
+  const target = s.target || {};
   const unit = unitKey(s.duration);
   return `<div class="step-row">
-    <select data-path="${path}" data-f="intensity" aria-label="Intensity">
-      ${INTENSITIES.map((v) => `<option${s.intensity === v ? ' selected' : ''}>${v}</option>`).join('')}
+    <select data-path="${path}" data-f="intensity" aria-label="${esc(t('wo.intensity'))}">
+      ${INTENSITIES.map((v) => `<option value="${v}"${s.intensity === v ? ' selected' : ''}>${esc(t('int.' + v))}</option>`).join('')}
     </select>
-    <input type="number" min="1" value="${(s.duration && s.duration.value) || 10}" data-path="${path}" data-f="value" aria-label="Duration">
-    <select data-path="${path}" data-f="unit" aria-label="Unit">
+    <input type="number" min="1" value="${(s.duration && s.duration.value) || 10}" data-path="${path}" data-f="value" aria-label="${esc(t('wo.duration'))}">
+    <select data-path="${path}" data-f="unit" aria-label="${esc(t('wo.unit'))}">
       ${UNITS.map(([key]) => `<option value="${key}"${unit === key ? ' selected' : ''}>${key}</option>`).join('')}
     </select>
-    <select data-path="${path}" data-f="target" aria-label="Target">
-      ${TARGETS.map(([key, label]) => `<option value="${key}"${(t.type || 'none') === key ? ' selected' : ''}>${label}</option>`).join('')}
+    <select data-path="${path}" data-f="target" aria-label="${esc(t('wo.target'))}">
+      ${targets().map(([key, label]) => `<option value="${key}"${(target.type || 'none') === key ? ' selected' : ''}>${esc(label)}</option>`).join('')}
     </select>
-    <input placeholder="zone or 4:30" value="${esc(t.zone || t.low || '')}" data-path="${path}" data-f="targval" aria-label="Target value"
-      ${t.type === 'none' ? 'disabled' : ''}>
-    <input placeholder="exercise (strength)" value="${esc(s.exercise || '')}" data-path="${path}" data-f="exercise" aria-label="Exercise">
-    <button type="button" class="ghost small" data-remove="${path}" aria-label="Remove step">×</button>
+    <input placeholder="${esc(t('wo.targetPh'))}" value="${esc(target.zone || target.low || '')}" data-path="${path}" data-f="targval" aria-label="${esc(t('wo.targetValue'))}"
+      ${target.type === 'none' ? 'disabled' : ''}>
+    <input placeholder="${esc(t('wo.exercisePh'))}" value="${esc(s.exercise || '')}" data-path="${path}" data-f="exercise" aria-label="${esc(t('wo.exercise'))}">
+    <button type="button" class="ghost small" data-remove="${path}" aria-label="${esc(t('wo.removeStep'))}">×</button>
   </div>`;
 }
 
@@ -91,38 +97,40 @@ function applyField(s, field, value) {
  * `athleteId` schedules onto that athlete's plan (coach use); `library`
  * shows the saved and built-in templates.
  */
-export function mountBuilder(host, { athleteId = null, library = true, title = 'Build a workout', intro = '' } = {}) {
+export function mountBuilder(host, { athleteId = null, library = true, title = '', intro = '' } = {}) {
   const model = { name: '', sport: 'running', kind: 'easy', steps: [step()] };
+  const heading = title || t('wo.title');
+  const lead = intro || t('wo.intro');
 
   host.innerHTML = `
     <div class="card">
-      <h2>${esc(title)}</h2>
-      <p class="muted">${intro || 'Preview checks the structure. Schedule queues it; the next Garmin sync writes it to the watch.'}</p>
+      <h2>${esc(heading)}</h2>
+      <p class="muted">${esc(lead)}</p>
       <div class="builder">
-        <input data-meta="name" placeholder="Name" aria-label="Workout name">
-        <select data-meta="sport" aria-label="Sport">
-          <option value="running">Run</option><option value="cycling">Bike</option>
-          <option value="swimming">Swim</option><option value="strength">Strength</option>
+        <input data-meta="name" placeholder="${esc(t('wo.name'))}" aria-label="${esc(t('wo.nameLabel'))}">
+        <select data-meta="sport" aria-label="${esc(t('wo.sport'))}">
+          <option value="running">${esc(t('wo.run'))}</option><option value="cycling">${esc(t('wo.bike'))}</option>
+          <option value="swimming">${esc(t('wo.swim'))}</option><option value="strength">${esc(t('wo.strength'))}</option>
         </select>
-        <select data-meta="kind" aria-label="Kind">
-          ${['easy', 'long', 'tempo', 'interval', 'strength', 'bike', 'swim'].map((k) => `<option value="${k}">${k[0].toUpperCase() + k.slice(1)}</option>`).join('')}
+        <select data-meta="kind" aria-label="${esc(t('wo.kind'))}">
+          ${kinds().map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join('')}
         </select>
       </div>
       <div data-steps></div>
       <div class="row-actions">
-        <button class="ghost" type="button" data-add="step">Add step</button>
-        <button class="ghost" type="button" data-add="repeat">Add repeat</button>
+        <button class="ghost" type="button" data-add="step">${esc(t('wo.addStep'))}</button>
+        <button class="ghost" type="button" data-add="repeat">${esc(t('wo.addRepeat'))}</button>
       </div>
       <div class="composer wrap" style="margin-top:12px">
-        <input type="date" data-date aria-label="Date" value="${todayIso()}">
-        <button class="ghost" type="button" data-preview>Preview</button>
-        ${library && !athleteId ? '<button class="ghost" type="button" data-save>Save to library</button>' : ''}
-        <button class="primary" type="button" data-schedule>${athleteId ? 'Schedule for athlete' : 'Schedule'}</button>
+        <input type="date" data-date aria-label="${esc(t('wo.date'))}" value="${todayIso()}">
+        <button class="ghost" type="button" data-preview>${esc(t('wo.preview'))}</button>
+        ${library && !athleteId ? `<button class="ghost" type="button" data-save>${esc(t('wo.save'))}</button>` : ''}
+        <button class="primary" type="button" data-schedule>${esc(athleteId ? t('wo.scheduleAthlete') : t('wo.schedule'))}</button>
       </div>
       <pre class="cmd-out" data-out></pre>
     </div>
-    ${library ? `<div class="card"><h2>Library</h2>
-      <p class="muted">Built-in sessions and the ones you saved. Use loads one into the editor.</p>
+    ${library ? `<div class="card"><h2>${esc(t('wo.library'))}</h2>
+      <p class="muted">${esc(t('wo.libraryHelp'))}</p>
       <div class="scroll"><table data-library></table></div></div>` : ''}`;
 
   const stepsHost = $('[data-steps]', host);
@@ -130,11 +138,11 @@ export function mountBuilder(host, { athleteId = null, library = true, title = '
 
   const render = () => {
     stepsHost.innerHTML = model.steps.map((s, i) => stepEditor(s, String(i))).join('')
-      || '<p class="muted">No steps yet.</p>';
+      || `<p class="muted">${esc(t('wo.noSteps'))}</p>`;
   };
 
   const read = () => ({
-    name: $('[data-meta="name"]', host).value || model.name || 'Workout',
+    name: $('[data-meta="name"]', host).value || model.name || t('wo.fallbackName'),
     sport: $('[data-meta="sport"]', host).value,
     kind: $('[data-meta="kind"]', host).value,
     steps: model.steps,
@@ -165,12 +173,12 @@ export function mountBuilder(host, { athleteId = null, library = true, title = '
     render();
   }));
 
-  $('[data-preview]', host).addEventListener('click', (event) => busy(event.currentTarget, 'Checking…', async () => {
+  $('[data-preview]', host).addEventListener('click', (event) => busy(event.currentTarget, t('wo.checking'), async () => {
     const body = await post('/api/workout/preview', read());
     out.textContent = (body.description ? body.description + '\n\n' : '') + JSON.stringify(body.workout, null, 2);
   }));
 
-  $('[data-schedule]', host).addEventListener('click', (event) => busy(event.currentTarget, 'Scheduling…', async () => {
+  $('[data-schedule]', host).addEventListener('click', (event) => busy(event.currentTarget, t('wo.scheduling'), async () => {
     const payload = { ...read(), date: $('[data-date]', host).value };
     if (athleteId) payload.athlete_id = athleteId;
     const body = await post('/api/workout/schedule', payload);
@@ -179,18 +187,17 @@ export function mountBuilder(host, { athleteId = null, library = true, title = '
     invalidate('plan', 'decide');
     if (!athleteId && state.status.garmin && state.status.garmin.connected) {
       post('/api/garmin/sync', {}).catch(() => {});
-      toast(`Scheduled for ${day}. Sending it to Garmin now.`);
+      toast(t('wo.scheduledNow', { day }));
     } else {
-      toast(athleteId ? `Queued for ${day}. It reaches their watch on their next sync.`
-        : `Queued for ${day}. The next Garmin sync puts it on your watch.`);
+      toast(athleteId ? t('wo.queuedCoach', { day }) : t('wo.queued', { day }));
     }
   }));
 
   const save = $('[data-save]', host);
   if (save) {
-    save.addEventListener('click', (event) => busy(event.currentTarget, 'Saving…', async () => {
+    save.addEventListener('click', (event) => busy(event.currentTarget, t('wo.saving'), async () => {
       await post('/api/workouts', read());
-      toast('Saved to your library');
+      toast(t('wo.saved'));
       loadLibrary();
     }));
   }
@@ -200,13 +207,13 @@ export function mountBuilder(host, { athleteId = null, library = true, title = '
     if (!table) return;
     const body = await api('/api/workouts').catch(() => ({ workouts: [] }));
     const items = body.workouts || [];
-    table.innerHTML = '<thead><tr><th>Name</th><th>Sport</th><th>Kind</th><th>Load</th><th></th></tr></thead><tbody>' +
+    table.innerHTML = `<thead><tr><th>${esc(t('wo.name'))}</th><th>${esc(t('wo.sport'))}</th><th>${esc(t('wo.kind'))}</th><th>${esc(t('wo.load'))}</th><th></th></tr></thead><tbody>` +
       (items.map((w, i) => {
         const wo = w.workout || w;
         return `<tr><td>${esc(w.name || wo.name || '')}</td><td>${esc(wo.sport || '')}</td>
           <td>${esc(wo.kind || '')}</td><td>${wo.est_load || ''}</td>
-          <td><button type="button" class="ghost" data-use="${i}">Use</button></td></tr>`;
-      }).join('') || '<tr><td colspan="5">No templates yet.</td></tr>') + '</tbody>';
+          <td><button type="button" class="ghost" data-use="${i}">${esc(t('wo.use'))}</button></td></tr>`;
+      }).join('') || `<tr><td colspan="5">${esc(t('wo.noTemplates'))}</td></tr>`) + '</tbody>';
     $$('[data-use]', table).forEach((button) => button.addEventListener('click', () => {
       const item = items[Number(button.dataset.use)];
       const wo = item.workout || item;

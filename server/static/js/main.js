@@ -3,6 +3,7 @@
    frame, so a slow answer for a page you already left lands nowhere. */
 import { closePanel, isLinkRoute, openLink, showForgot } from './components/account-links.js';
 import { api, onUnauthorized, post } from './core/api.js';
+import { initLocale, onLocale, t, translatePhrase } from './core/i18n.js';
 import { navigate, path, rerender, start } from './core/router.js';
 import { events, hasData, refreshStatus, role, state } from './core/state.js';
 import { $, $$, agoFromEpoch, busy, errorCard, esc, loadingPage, toast } from './core/ui.js';
@@ -17,10 +18,10 @@ import * as today from './views/today.js';
 import * as training from './views/training.js';
 
 const VIEWS = { today, training, insights, coaching, settings, athletes, guide };
-const TITLES = {
-  today: 'Today', training: 'Training', insights: 'Insights',
-  coaching: 'Coaching', settings: 'Settings', athletes: 'Athletes', guide: 'Guide',
-};
+
+function title(section) {
+  return t(`nav.${section}`);
+}
 
 const ICON_PATHS = {
   today: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
@@ -57,8 +58,8 @@ let pendingRequests = 0;
 function navLink(section) {
   const current = path()[0] === section ? ' aria-current="page"' : '';
   const count = section === 'athletes' && pendingRequests
-    ? `<span class="count" aria-label="${pendingRequests} pending">${pendingRequests}</span>` : '';
-  return `<a href="#/${section}"${current}>${icon(section)}<span>${TITLES[section]}</span>${count}</a>`;
+    ? `<span class="count" aria-label="${esc(t('nav.pending', { n: pendingRequests }))}">${pendingRequests}</span>` : '';
+  return `<a href="#/${section}"${current}>${icon(section)}<span>${esc(title(section))}</span>${count}</a>`;
 }
 
 function renderNav() {
@@ -68,7 +69,7 @@ function renderNav() {
   $('#sidebar-foot').textContent = user.email || '';
   $('#user-button').textContent = (user.email || '?').slice(0, 1).toUpperCase();
   $('#user-who').innerHTML = `<strong>${esc(user.email || '')}</strong><br>` +
-    `<span class="muted">${user.role === 'coach' ? 'Coach account' : 'Athlete account'}</span>`;
+    `<span class="muted">${user.role === 'coach' ? esc(t('nav.coachAccount')) : esc(t('nav.athleteAccount'))}</span>`;
 }
 
 function renderPill() {
@@ -76,23 +77,23 @@ function renderPill() {
   const g = status.garmin || {};
   const pill = $('#sync-pill');
   let tone = 'warn';
-  let text = 'No data yet';
+  let text = t('pill.none');
   if (g.connected && g.running) {
-    tone = 'busy'; text = 'Syncing…';
+    tone = 'busy'; text = t('pill.syncing');
   } else if (g.connected && g.needs_login) {
-    tone = 'bad'; text = 'Reconnect Garmin';
+    tone = 'bad'; text = t('pill.reconnect');
   } else if (g.connected && g.last_error) {
-    tone = 'warn'; text = 'Sync problem';
+    tone = 'warn'; text = t('pill.problem');
   } else if (g.connected && g.last_sync) {
     tone = Date.now() / 1000 - g.last_sync > 86400 ? 'warn' : 'ok';
-    text = `Synced ${agoFromEpoch(g.last_sync)}`;
+    text = t('pill.synced', { when: agoFromEpoch(g.last_sync) });
   } else if (status.last) {
     tone = status.stale ? 'warn' : 'ok';
-    text = `Data through ${status.ago}`;
+    text = t('pill.through', { when: translatePhrase(status.ago) });
   }
   pill.className = `pill ${tone}`;
   pill.textContent = text;
-  pill.title = 'Data sources';
+  pill.title = t('pill.sources');
 }
 
 async function loadInboxCount() {
@@ -121,8 +122,8 @@ async function onRoute(segments) {
   if (cleanup) cleanup();
   cleanup = null;
   renderNav();
-  $('#page-title').textContent = TITLES[section];
-  document.title = `${TITLES[section]} · garmincoach`;
+  $('#page-title').textContent = title(section);
+  document.title = `${title(section)} · garmincoach`;
 
   const frame = document.createElement('div');
   frame.innerHTML = loadingPage();
@@ -175,13 +176,13 @@ function renderBanner() {
   if (host.dataset.for === user.email && host.innerHTML) return;
   host.dataset.for = user.email;
   host.innerHTML = `<div class="banner warn">
-    <span>Confirm your email: we sent a link to <strong>${esc(user.email)}</strong>.
-      You'll need it to reset your password.</span>
+    <span>${esc(t('banner.confirmBefore'))} <strong>${esc(user.email)}</strong>.
+      ${esc(t('banner.confirmAfter'))}</span>
     <span class="spacer"></span>
-    <button type="button" class="ghost small" data-resend>Send again</button></div>`;
-  $('[data-resend]', host).addEventListener('click', (event) => busy(event.target, 'Sending…', async () => {
+    <button type="button" class="ghost small" data-resend>${esc(t('banner.sendAgain'))}</button></div>`;
+  $('[data-resend]', host).addEventListener('click', (event) => busy(event.target, t('banner.sending'), async () => {
     await post('/api/email/verify/send');
-    toast(`Sent to ${user.email}`);
+    toast(t('banner.sent', { email: user.email }));
   }));
 }
 
@@ -203,7 +204,7 @@ function setMode(next) {
   $$('#gate-tabs [data-mode]').forEach((tab) => {
     tab.setAttribute('aria-selected', String(tab.dataset.mode === mode));
   });
-  $('#gate-submit').textContent = signup ? 'Create account' : 'Sign in';
+  $('#gate-submit').textContent = signup ? t('gate.create') : t('gate.signIn');
   $('#password').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
   $('#gate-role').classList.toggle('hidden', !signup);
   $('#password-hint').classList.toggle('hidden', !signup);
@@ -217,7 +218,7 @@ function updateHint() {
   const min = state.site.min_password || 8;
   const long = $('#password').value.length >= min;
   const hint = $('#password-hint');
-  hint.textContent = long ? 'Password length is fine.' : `At least ${min} characters.`;
+  hint.textContent = long ? t('gate.lengthOk') : t('gate.lengthMin', { n: min });
   hint.classList.toggle('ok', long);
 }
 
@@ -268,7 +269,7 @@ $('#gate-form').addEventListener('submit', async (event) => {
   const email = $('#email').value.trim();
   const password = $('#password').value;
   if (!email || !password) {
-    error.textContent = 'Enter your email and password.';
+    error.textContent = t('gate.needBoth');
     return;
   }
   const payload = { email, password };
@@ -285,7 +286,7 @@ $('#gate-form').addEventListener('submit', async (event) => {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      error.textContent = body.error || body.detail || 'Could not sign in.';
+      error.textContent = body.error || body.detail || t('gate.failed');
       return;
     }
     $('#password').value = '';
@@ -352,4 +353,16 @@ async function boot() {
 onUnauthorized(() => showGate());
 installGlossary();
 events.addEventListener('inbox', loadInboxCount);
-boot().catch(() => showGate('Could not reach the site.'));
+initLocale();
+onLocale(() => {
+  const banner = $('#account-banner');
+  if (banner) delete banner.dataset.for;
+  setMode(mode);
+  if (!$('#shell').classList.contains('hidden')) {
+    renderNav();
+    renderPill();
+    renderBanner();
+    if (started) rerender();
+  }
+});
+boot().catch(() => showGate(t('gate.unreachable')));

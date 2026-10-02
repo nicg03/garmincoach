@@ -3,6 +3,7 @@
    polls status while there's no data, and Today redraws once it lands. */
 import { renderGarmin } from '../components/garmin-connect.js';
 import { bindDropzone, dropzoneHtml, extensionHtml } from '../components/importers.js';
+import { t } from '../core/i18n.js';
 import { rerender } from '../core/router.js';
 import { state } from '../core/state.js';
 import { $, bindCopy, esc } from '../core/ui.js';
@@ -13,15 +14,15 @@ export function renderOnboarding(root) {
   const last = status.last_ingest;
   const linked = Boolean(g.connected || last);
   const steps = [
-    { title: 'Account created', body: esc((status.user || {}).email || ''), done: true },
+    { title: t('onboard.created'), body: esc((status.user || {}).email || ''), done: true },
     {
-      title: 'Connect Garmin',
-      body: 'Sign in to Garmin once. We fetch your recent weeks, then keep up by ourselves.',
+      title: t('onboard.connect'),
+      body: esc(t('onboard.connectHelp')),
       done: linked,
     },
     {
-      title: 'First data arrives',
-      body: g.running ? 'Fetching now. This page fills in by itself.' : 'Usually within a minute of connecting.',
+      title: t('onboard.arrives'),
+      body: esc(g.running ? t('onboard.fetching') : t('onboard.usually')),
       done: false,
     },
   ];
@@ -31,32 +32,30 @@ export function renderOnboarding(root) {
 
   root.innerHTML = `
     <div class="card setup-card">
-      <p class="kicker">Getting started</p>
-      <h2>Let's bring in your training</h2>
-      <p class="lede muted">Once your Garmin data is here you get daily readiness, training
-        load, race plans and a coach that reads your numbers.</p>
+      <p class="kicker">${esc(t('onboard.kicker'))}</p>
+      <h2>${esc(t('onboard.title'))}</h2>
+      <p class="lede muted">${esc(t('onboard.lede'))}</p>
       <div class="progress" aria-hidden="true"><i style="width:${Math.round(doneCount / steps.length * 100)}%"></i></div>
       <ol class="checklist">
         ${steps.map((s, i) => `<li class="${s.done ? 'done' : i === current ? 'current' : ''}">
           <span class="tick">${s.done ? '✓' : i + 1}</span>
-          <div><strong>${s.title}</strong><span class="muted">${s.body}</span></div>
+          <div><strong>${esc(s.title)}</strong><span class="muted">${s.body}</span></div>
         </li>`).join('')}
       </ol>
-      ${emptyIngest && !g.running ? `<div class="banner warn">${esc(last.error ||
-        'The last sync stored nothing. Check that Garmin Connect has data for this account, then sync again.')}</div>` : ''}
+      ${emptyIngest && !g.running ? `<div class="banner warn">${esc(last.error || t('onboard.emptySync'))}</div>` : ''}
       <div data-garmin></div>
     </div>
 
     <details class="card advanced" ${g.available ? '' : 'open'}>
-      <summary>Other ways to import</summary>
+      <summary>${esc(t('onboard.other'))}</summary>
       <div class="grid-2" style="margin-top:14px">
         <div>
-          <h3>Browser extension</h3>
-          <p class="muted">Syncs through your own Garmin Connect session in Chrome.</p>
+          <h3>${esc(t('onboard.extension'))}</h3>
+          <p class="muted">${esc(t('onboard.extensionHelp'))}</p>
           ${extensionHtml('onboard')}
         </div>
         <div>
-          <h3>Garmin export zip</h3>
+          <h3>${esc(t('onboard.zip'))}</h3>
           ${dropzoneHtml()}
         </div>
       </div>
