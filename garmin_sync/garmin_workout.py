@@ -136,7 +136,7 @@ def to_garmin(workout: dict) -> dict:
         "workoutName": clean["name"],
         "description": clean.get("description") or "",
         "sportType": sport,
-        "workoutProvider": "Garmin Coach",
+        "workoutProvider": "gepard.fit",
         "workoutSourceId": None,
         "isSessionTransitionEnabled": False,
         "estimatedDurationInSecs": clean.get("est_seconds") or 0,

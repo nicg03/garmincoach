@@ -20,12 +20,13 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 import time
 
 from fastapi import (BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query,
                      Request, Response)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from garmin_sync import metrics
@@ -92,13 +93,31 @@ async def lifespan(_app: FastAPI):
         task.cancel()
 
 
-app = FastAPI(title="Garmin Sync", docs_url=None, redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="gepard.fit", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+@app.middleware("http")
+async def canonical_host(request: Request, call_next):
+    """Send pages opened on any other address (the Railway one, www.) to
+    PUBLIC_URL. The API answers everywhere: the extension and the computer
+    sync keep posting to whatever address they were linked with."""
+    canonical = urlsplit(config.PUBLIC_URL).netloc.lower()
+    host = request.headers.get("host", "").lower()
+    if (canonical and host and host != canonical
+            and request.method in ("GET", "HEAD")
+            and not request.url.path.startswith("/api/")):
+        target = config.PUBLIC_URL + request.url.path
+        if request.url.query:
+            target += "?" + request.url.query
+        return RedirectResponse(target, status_code=301)
+    return await call_next(request)
+
+
 class RevalidatedStatic(StaticFiles):
     """JS and CSS must revalidate. Module imports are not covered by the ?v= on main.js."""
 

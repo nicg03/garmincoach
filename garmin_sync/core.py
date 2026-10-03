@@ -86,7 +86,7 @@ def link(url: str | None = None, log=_noop, open_browser: bool = True) -> dict:
     if not site_url:
         raise RuntimeError(
             "Pass the site address once:\n"
-            "  python -m garmin_sync link --url https://your-app.up.railway.app")
+            "  python -m garmin_sync link --url https://gepard.fit")
 
     begin = _post_json(f"{site_url}/api/pair/begin", None, {})
     device_code = begin["device_code"]
@@ -345,7 +345,7 @@ def push(since: date | str | None = None, url: str | None = None,
         raise RuntimeError(
             "No site configured yet. Sign up on the site, then link this "
             "computer once:\n"
-            "  python -m garmin_sync link --url https://your-app.up.railway.app")
+            "  python -m garmin_sync link --url https://gepard.fit")
     if not DB_PATH.exists():
         raise RuntimeError("No local history yet -- pull some data first.")
 

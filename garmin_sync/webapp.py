@@ -130,7 +130,7 @@ PAGE = """<!doctype html>
     <div class="counts" id="site-state">Not configured yet.</div>
     <div class="counts">Paste the site address, then Connect — a browser opens so you can approve. No token to copy.</div>
     <div class="row" style="margin-top:10px">
-      <input type="text" id="site-url" placeholder="https://your-app.up.railway.app">
+      <input type="text" id="site-url" placeholder="https://gepard.fit">
       <button class="ghost" id="btn-save-site" onclick="linkSite()">Connect</button>
     </div>
     <div class="row">

@@ -1,4 +1,7 @@
-# garmincoach
+# gepard.fit
+
+Live at [gepard.fit](https://gepard.fit). The repository is still called
+`garmincoach`.
 
 Garmin data, published to a site anyone can sign up for, and handed to a coach
 so you can ask it things.
@@ -103,7 +106,7 @@ only what's missing up to today, and sends the result to your site. First time
 you need the site address, link once so the token is saved for you:
 
 ```bash
-python -m garmin_sync link --url https://your-app.up.railway.app
+python -m garmin_sync link --url https://gepard.fit
 python -m garmin_sync pull --since 14d   # fetch, summarize, write a JSON file
 python -m garmin_sync push --all         # publish the entire local history
 ```
@@ -205,6 +208,13 @@ The rest, if you want them:
 your chosen branch deploys itself, so `railway up` stops being part of your
 life.
 
+**5. Custom domain.** Service → **Settings** → **Networking** → **Custom
+Domain**, enter `gepard.fit` (and `www.gepard.fit` if you want it), and add
+the records Railway shows at the registrar. Once the certificate is issued,
+set `PUBLIC_URL=https://gepard.fit`: pages opened on any other address
+redirect there, email links use it, and `/api/` keeps answering on the old
+Railway address so linked extensions and computers don't break.
+
 Then each user signs up and clicks **Connect Garmin** on the first screen.
 That's it; the first weeks arrive within a minute and older history follows in
 the background.
@@ -214,7 +224,7 @@ extension and the export zip under **Other ways to import**. The computer sync
 still works too:
 
 ```bash
-python -m garmin_sync link --url https://your-app.up.railway.app
+python -m garmin_sync link --url https://gepard.fit
 ```
 
 A browser opens on the site. Sign in if needed, click **Connect this computer**,

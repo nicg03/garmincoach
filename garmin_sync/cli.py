@@ -233,14 +233,14 @@ def build_parser():
     pl.set_defaults(func=cmd_pull)
 
     ph = sub.add_parser("push", help="publish stored data to your site")
-    ph.add_argument("--url", help="site address, e.g. https://you.up.railway.app")
+    ph.add_argument("--url", help="site address, e.g. https://gepard.fit")
     ph.add_argument("--token", help="your sync token (usually set via `link`)")
     ph.add_argument("--since", help="e.g. 90d or 2026-01-01 (default: last 30 days)")
     ph.add_argument("--all", action="store_true", help="push the entire history")
     ph.set_defaults(func=cmd_push)
 
     lk = sub.add_parser("link", help="connect this computer to the site (no token copy)")
-    lk.add_argument("--url", help="site address, e.g. https://you.up.railway.app")
+    lk.add_argument("--url", help="site address, e.g. https://gepard.fit")
     lk.set_defaults(func=cmd_link)
 
     sy = sub.add_parser("sync", help="fetch what's missing, then publish it")

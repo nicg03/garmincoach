@@ -125,7 +125,7 @@ async function onRoute(segments) {
   cleanup = null;
   renderNav();
   $('#page-title').textContent = title(section);
-  document.title = `${title(section)} · garmincoach`;
+  document.title = `${title(section)} · gepard.fit`;
 
   const frame = document.createElement('div');
   frame.innerHTML = loadingPage();
@@ -371,7 +371,7 @@ paintLang();
 document.addEventListener('app:signed-out', () => {
   state.status = {};
   toggleMenu(false);
-  document.title = 'garmincoach';
+  document.title = 'gepard.fit';
   showGate();
 });
 onLocale(() => {

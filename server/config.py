@@ -70,7 +70,7 @@ GARMIN_SCHEDULER = os.environ.get("GARMIN_SCHEDULER", "1") != "0"
 # Flip ACCOUNT_EMAILS to True after RESEND_API_KEY and EMAIL_FROM are set.
 ACCOUNT_EMAILS = False
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-EMAIL_FROM = os.environ.get("EMAIL_FROM", "garmincoach <onboarding@resend.dev>")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "gepard.fit <onboarding@resend.dev>")
 
 # The address links in emails point at. Railway sets RAILWAY_PUBLIC_DOMAIN by
 # itself; building links from the request's Host header instead would let

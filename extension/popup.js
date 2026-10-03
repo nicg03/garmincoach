@@ -113,7 +113,7 @@ function render(state) {
 }
 
 /**
- * If the active tab is a Garmin Coach site, fill its address in. The site
+ * If the active tab is a gepard.fit site, fill its address in. The site
  * answers `/api/config` with `app: "garmincoach"` and allows any origin, so
  * this needs no extra permission and nobody has to copy a URL.
  */

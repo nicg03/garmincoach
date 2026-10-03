@@ -1,5 +1,5 @@
 """
-The deployed half of garmincoach: a small FastAPI site that shows your
+The deployed half of gepard.fit: a small FastAPI site that shows your
 Garmin history and lets you ask Claude about it.
 
 It never talks to Garmin. Your Mac does that (Playwright needs a real browser

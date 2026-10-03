@@ -234,9 +234,23 @@ def test_mailer_posts_to_resend(monkeypatch):
     assert mailer.reset_password("a@example.com", "https://coach.test/#/reset/abc")
     assert seen["url"] == mailer.RESEND_URL
     assert seen["headers"]["Authorization"] == "Bearer re_test"
-    assert seen["headers"]["User-agent"].startswith("garmincoach")
+    assert seen["headers"]["User-agent"].startswith("gepard.fit")
     assert seen["body"]["to"] == ["a@example.com"]
     assert "https://coach.test/#/reset/abc" in seen["body"]["text"]
+
+
+def test_pages_move_to_public_url_but_the_api_answers_everywhere(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "PUBLIC_URL", "https://gepard.fit")
+    old = TestClient(app, base_url="https://app.up.railway.app")
+
+    page = old.get("/settings?x=1", follow_redirects=False)
+    assert page.status_code == 301
+    assert page.headers["location"] == "https://gepard.fit/settings?x=1"
+    assert old.get("/api/config").status_code == 200
+    assert old.post("/api/login", json={"email": "a@example.com",
+                                         "password": PASSWORD}).status_code != 301
+    assert TestClient(app, base_url="https://gepard.fit").get("/").status_code == 200
 
 
 def test_account_delete_removes_tokens(tmp_path, monkeypatch):

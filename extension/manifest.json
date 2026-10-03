@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Garmin Coach Sync",
-  "version": "0.4.0",
-  "description": "Publishes your Garmin Connect data to your own Garmin Coach site, and writes planned workouts back to your watch.",
+  "name": "gepard.fit Sync",
+  "version": "0.4.1",
+  "description": "Publishes your Garmin Connect data to your own gepard.fit site, and writes planned workouts back to your watch.",
   "permissions": ["storage", "alarms", "tabs", "scripting"],
   "host_permissions": ["https://connect.garmin.com/*"],
   "optional_host_permissions": [
@@ -16,7 +16,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Garmin Coach Sync",
+    "default_title": "gepard.fit Sync",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

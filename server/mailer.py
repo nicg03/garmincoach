@@ -43,7 +43,7 @@ def send(to: str, subject: str, text: str) -> bool:
         "Authorization": f"Bearer {config.RESEND_API_KEY}",
         "Content-Type": "application/json",
         # Resend's edge rejects urllib's default agent with a bare 403.
-        "User-Agent": "garmincoach/1.0",
+        "User-Agent": "gepard.fit/1.0",
     })
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS,
@@ -57,32 +57,32 @@ def send(to: str, subject: str, text: str) -> bool:
     return False
 
 
-SIGNATURE = "\n\n-- garmincoach"
+SIGNATURE = "\n\n-- gepard.fit"
 
 
 def verify_email(to: str, link: str) -> bool:
-    return send(to, "Confirm your email for garmincoach",
+    return send(to, "Confirm your email for gepard.fit",
                 "Confirm this is your address so you can reset your password "
                 f"if you ever need to:\n\n{link}\n\nThe link works for 48 hours. "
                 "If you didn't sign up, ignore this email." + SIGNATURE)
 
 
 def reset_password(to: str, link: str) -> bool:
-    return send(to, "Reset your garmincoach password",
+    return send(to, "Reset your gepard.fit password",
                 f"Choose a new password here:\n\n{link}\n\nThe link works for "
                 "one hour and only once. If you didn't ask for this, ignore this "
                 "email; your password stays the same." + SIGNATURE)
 
 
 def confirm_new_email(to: str, link: str) -> bool:
-    return send(to, "Confirm your new email for garmincoach",
-                "Confirm that garmincoach should use this address from now on:"
+    return send(to, "Confirm your new email for gepard.fit",
+                "Confirm that gepard.fit should use this address from now on:"
                 f"\n\n{link}\n\nThe link works for 24 hours. Until you confirm, "
                 "your old address stays in place." + SIGNATURE)
 
 
 def account_changed(to: str, what: str) -> bool:
-    return send(to, f"Your garmincoach {what} was changed",
-                f"The {what} of your garmincoach account was just changed, and "
+    return send(to, f"Your gepard.fit {what} was changed",
+                f"The {what} of your gepard.fit account was just changed, and "
                 "other devices were signed out.\n\nIf this wasn't you, reset "
                 "your password straight away from the sign-in page." + SIGNATURE)
