@@ -111,14 +111,15 @@ def meta(user_id: int) -> dict:
         return handle.meta(user_id)
 
 
-def get_briefing(user_id: int, day: str) -> str | None:
+def get_briefing(user_id: int, day: str, lang: str = "en") -> str | None:
     with store() as handle:
-        return handle.briefing(user_id, day)
+        return handle.briefing(user_id, day, lang)
 
 
-def save_briefing(user_id: int, day: str, text: str, created: str) -> None:
+def save_briefing(user_id: int, day: str, text: str, created: str,
+                  lang: str = "en") -> None:
     with store() as handle:
-        handle.save_briefing(user_id, day, text, created)
+        handle.save_briefing(user_id, day, text, created, lang)
 
 
 def coach_calls_today(user_id: int) -> int:

@@ -46,7 +46,8 @@ How to answer:
 - You are not a doctor. Point them at one for anything medical, and don't \
 diagnose."""
 
-BRIEFING_PROMPT = """Write today's briefing. Three short parts, with a \
+BRIEFING_PROMPTS = {
+    "en": """Write today's briefing. Three short parts, with a \
 markdown heading each:
 
 **Where you are** -- how the last week or two actually went, in load and in \
@@ -56,9 +57,34 @@ specific quality session), and why.
 **Keep an eye on** -- the one thing most worth watching, or the one thing \
 you'd change.
 
-Keep the whole thing under 250 words."""
+Keep the whole thing under 250 words.""",
+    "it": """Scrivi il briefing di oggi. Tre parti brevi, ciascuna con un \
+titolo markdown:
+
+**Dove sei** -- come sono andate le ultime una o due settimane, in termini \
+di carico e recupero.
+**Oggi** -- come dovrebbe essere oggi, in concreto (riposo, facile, o una \
+seduta di qualità specifica), e perché.
+**Tieni d'occhio** -- la cosa più importante da osservare, o la cosa che \
+cambieresti.
+
+Tutto sotto le 250 parole.""",
+}
+
+REPLY_LANG = {
+    "en": "Always answer in English.",
+    "it": "Rispondi sempre in italiano.",
+}
 
 MAX_HISTORY_TURNS = 8
+
+
+def normalize_lang(lang: str | None) -> str:
+    return "it" if (lang or "").lower().startswith("it") else "en"
+
+
+def _system(lang: str) -> str:
+    return f"{SYSTEM}\n\n{REPLY_LANG[normalize_lang(lang)]}"
 
 
 def _csv(header: str, rows: list[list]) -> str:
@@ -229,57 +255,64 @@ def _anthropic_client():
 
 
 def _complete(user_id: int, question: str,
-              history: list[dict] | None = None) -> str:
+              history: list[dict] | None = None, lang: str = "en") -> str:
     provider = config.coach_provider()
     if provider is None:
         raise RuntimeError("The coach needs OPENAI_API_KEY or ANTHROPIC_API_KEY.")
+    lang = normalize_lang(lang)
+    system = _system(lang)
     messages = _messages(user_id, question, history)
     if provider == "openai":
         response = _openai_client().chat.completions.create(
             model=config.coach_model(),
             max_tokens=config.COACH_MAX_TOKENS,
-            messages=[{"role": "system", "content": SYSTEM}, *messages],
+            messages=[{"role": "system", "content": system}, *messages],
         )
         return (response.choices[0].message.content or "").strip()
     response = _anthropic_client().messages.create(
         model=config.coach_model(),
         max_tokens=config.COACH_MAX_TOKENS,
-        system=SYSTEM,
+        system=system,
         messages=messages,
     )
     return "".join(block.text for block in response.content
                    if getattr(block, "type", "") == "text")
 
 
-def briefing(user_id: int) -> str:
+def briefing(user_id: int, lang: str = "en") -> str:
     """One-shot daily summary. Not streamed: it gets cached and re-read."""
-    return _complete(user_id, BRIEFING_PROMPT)
+    lang = normalize_lang(lang)
+    return _complete(user_id, BRIEFING_PROMPTS[lang], lang=lang)
 
 
-def cached_briefing(user_id: int, refresh: bool = False) -> dict:
+def cached_briefing(user_id: int, refresh: bool = False, lang: str = "en") -> dict:
     today = date.today().isoformat()
+    lang = normalize_lang(lang)
     if not refresh:
-        cached = db.get_briefing(user_id, today)
+        cached = db.get_briefing(user_id, today, lang)
         if cached:
-            return {"date": today, "text": cached, "cached": True}
-    text = briefing(user_id)
+            return {"date": today, "text": cached, "cached": True, "lang": lang}
+    text = briefing(user_id, lang=lang)
     db.save_briefing(user_id, today, text,
-                     datetime.now().isoformat(timespec="seconds"))
-    return {"date": today, "text": text, "cached": False}
+                     datetime.now().isoformat(timespec="seconds"), lang)
+    return {"date": today, "text": text, "cached": False, "lang": lang}
 
 
-def stream(user_id: int, question: str, history: list[dict] | None = None):
+def stream(user_id: int, question: str, history: list[dict] | None = None,
+           lang: str = "en"):
     """Server-sent events carrying the answer as it's written."""
     try:
         provider = config.coach_provider()
         if provider is None:
             raise RuntimeError("The coach needs OPENAI_API_KEY or ANTHROPIC_API_KEY.")
+        lang = normalize_lang(lang)
+        system = _system(lang)
         messages = _messages(user_id, question, history)
         if provider == "openai":
             response = _openai_client().chat.completions.create(
                 model=config.coach_model(),
                 max_tokens=config.COACH_MAX_TOKENS,
-                messages=[{"role": "system", "content": SYSTEM}, *messages],
+                messages=[{"role": "system", "content": system}, *messages],
                 stream=True,
             )
             for chunk in response:
@@ -290,7 +323,7 @@ def stream(user_id: int, question: str, history: list[dict] | None = None):
             with _anthropic_client().messages.stream(
                 model=config.coach_model(),
                 max_tokens=config.COACH_MAX_TOKENS,
-                system=SYSTEM,
+                system=system,
                 messages=messages,
             ) as response:
                 for chunk in response.text_stream:

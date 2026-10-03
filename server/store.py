@@ -59,9 +59,10 @@ CREATE TABLE IF NOT EXISTS garmin_meta (
 CREATE TABLE IF NOT EXISTS briefings (
     user_id  INTEGER NOT NULL,
     date     TEXT NOT NULL,
+    lang     TEXT NOT NULL DEFAULT 'en',
     text     TEXT NOT NULL,
     created  TEXT NOT NULL,
-    PRIMARY KEY (user_id, date)
+    PRIMARY KEY (user_id, date, lang)
 );
 CREATE TABLE IF NOT EXISTS coach_usage (
     user_id  INTEGER NOT NULL,
@@ -229,6 +230,18 @@ class Store:
         if "session_version" not in cols:
             self.conn.execute(
                 "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0")
+        brief_cols = {row[1] for row in self.conn.execute("PRAGMA table_info(briefings)")}
+        if brief_cols and "lang" not in brief_cols:
+            self.conn.execute(
+                "CREATE TABLE briefings_v2 ("
+                "user_id INTEGER NOT NULL, date TEXT NOT NULL, "
+                "lang TEXT NOT NULL DEFAULT 'en', text TEXT NOT NULL, "
+                "created TEXT NOT NULL, PRIMARY KEY (user_id, date, lang))")
+            self.conn.execute(
+                "INSERT INTO briefings_v2 (user_id, date, lang, text, created) "
+                "SELECT user_id, date, 'en', text, created FROM briefings")
+            self.conn.execute("DROP TABLE briefings")
+            self.conn.execute("ALTER TABLE briefings_v2 RENAME TO briefings")
 
     def close(self):
         self.conn.close()
@@ -566,17 +579,19 @@ class Store:
         return out
 
     # ---- coach --------------------------------------------------------------
-    def briefing(self, user_id: int, day: str) -> str | None:
+    def briefing(self, user_id: int, day: str, lang: str = "en") -> str | None:
         row = self.conn.execute(
-            "SELECT text FROM briefings WHERE user_id = ? AND date = ?",
-            (user_id, day)).fetchone()
+            "SELECT text FROM briefings WHERE user_id = ? AND date = ? AND lang = ?",
+            (user_id, day, lang)).fetchone()
         return row["text"] if row else None
 
-    def save_briefing(self, user_id: int, day: str, text: str, created: str) -> None:
+    def save_briefing(self, user_id: int, day: str, text: str, created: str,
+                      lang: str = "en") -> None:
         self.conn.execute(
-            "INSERT INTO briefings (user_id, date, text, created) VALUES (?,?,?,?) "
-            "ON CONFLICT(user_id, date) DO UPDATE SET text=excluded.text, "
-            "created=excluded.created", (user_id, day, text, created))
+            "INSERT INTO briefings (user_id, date, lang, text, created) "
+            "VALUES (?,?,?,?,?) "
+            "ON CONFLICT(user_id, date, lang) DO UPDATE SET text=excluded.text, "
+            "created=excluded.created", (user_id, day, lang, text, created))
         self.commit()
 
     def coach_calls(self, user_id: int, day: str) -> int:

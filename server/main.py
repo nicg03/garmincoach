@@ -810,15 +810,18 @@ def _check_coach(user: dict) -> None:
 
 
 @app.get("/api/brief")
-def brief(refresh: int = 0, user: dict = Depends(security.current_user)):
+def brief(refresh: int = 0, lang: str = "en",
+          user: dict = Depends(security.current_user)):
     """Today's briefing, generated once and cached for the rest of the day."""
-    cached = db.get_briefing(user["id"], date.today().isoformat())
+    lang = coach.normalize_lang(lang)
+    cached = db.get_briefing(user["id"], date.today().isoformat(), lang)
     if cached and not refresh:
-        return {"date": date.today().isoformat(), "text": cached, "cached": True}
+        return {"date": date.today().isoformat(), "text": cached,
+                "cached": True, "lang": lang}
 
     _check_coach(user)
     try:
-        result = coach.cached_briefing(user["id"], refresh=bool(refresh))
+        result = coach.cached_briefing(user["id"], refresh=bool(refresh), lang=lang)
     except Exception as e:  # noqa: BLE001 - surface the provider's complaint
         raise HTTPException(502, f"The coach couldn't answer: {e}") from None
     db.record_coach_call(user["id"])
@@ -833,10 +836,11 @@ def chat(payload: dict[str, Any] = Body(...),
     if not question:
         raise HTTPException(400, "Ask something.")
     history = payload.get("history")
+    lang = coach.normalize_lang(payload.get("lang"))
     db.record_coach_call(user["id"])
     return StreamingResponse(
         coach.stream(user["id"], question[:2000],
-                     history if isinstance(history, list) else None),
+                     history if isinstance(history, list) else None, lang=lang),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

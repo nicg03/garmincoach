@@ -2,7 +2,7 @@
    coach they're linked to. The conversation survives moving between pages. */
 import { api, post } from '../core/api.js';
 import { info } from '../core/glossary.js';
-import { t } from '../core/i18n.js';
+import { getLocale, t } from '../core/i18n.js';
 import { rerender } from '../core/router.js';
 import { cached, invalidate, role, state } from '../core/state.js';
 import { $, $$, busy, emptyState, esc, loadingPage, markdown, skeleton, subnav, toast } from '../core/ui.js';
@@ -62,10 +62,13 @@ function aiCoach(host) {
     </div>`;
 
   const brief = $('[data-brief]', host);
+  const lang = getLocale();
   const loadBrief = (refresh) => {
-    if (refresh) invalidate('brief');
+    if (refresh) invalidate(`brief:${lang}`);
     brief.innerHTML = `<p class="muted">${esc(t('coach.reading'))}</p>`;
-    return cached('brief', () => api('/api/brief' + (refresh ? '?refresh=1' : '')))
+    const query = new URLSearchParams({ lang });
+    if (refresh) query.set('refresh', '1');
+    return cached(`brief:${lang}`, () => api(`/api/brief?${query}`))
       .then((body) => { brief.innerHTML = markdown(body.text || ''); })
       .catch((error) => { brief.innerHTML = `<p class="error">${esc(error.message)}</p>`; });
   };
@@ -102,7 +105,11 @@ function aiCoach(host) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ question: text, history: state.history.slice(-8) }),
+        body: JSON.stringify({
+          question: text,
+          history: state.history.slice(-8),
+          lang: getLocale(),
+        }),
       });
       if (!response.ok || !response.body) {
         const body = await response.json().catch(() => ({}));

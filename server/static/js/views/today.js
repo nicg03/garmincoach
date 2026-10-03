@@ -4,7 +4,7 @@ import { activityHead, activityRows, bindActivityList, groupedHeadline } from '.
 import { api, post } from '../core/api.js';
 import { showText } from '../core/copy.js';
 import { info } from '../core/glossary.js';
-import { t, translatePhrase } from '../core/i18n.js';
+import { getLocale, t, translatePhrase } from '../core/i18n.js';
 import { rerender } from '../core/router.js';
 import { cached, hasData, invalidate, role, state } from '../core/state.js';
 import {
@@ -181,7 +181,8 @@ export async function render(root) {
 
   const brief = $('[data-brief]', root);
   if (brief) {
-    cached('brief', () => api('/api/brief'))
+    const lang = getLocale();
+    cached(`brief:${lang}`, () => api(`/api/brief?lang=${encodeURIComponent(lang)}`))
       .then((body) => { brief.innerHTML = markdown(body.text || ''); })
       .catch((error) => { brief.innerHTML = `<p class="muted">${esc(error.message)}</p>`; });
   }
