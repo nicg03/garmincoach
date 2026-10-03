@@ -106,15 +106,16 @@ async def canonical_host(request: Request, call_next):
     """Send pages opened on any other address (the Railway one, www.) to
     PUBLIC_URL. The API answers everywhere: the extension and the computer
     sync keep posting to whatever address they were linked with."""
-    canonical = urlsplit(config.PUBLIC_URL).netloc.lower()
+    canonical = urlsplit(config.CANONICAL_URL).netloc.lower()
     host = request.headers.get("host", "").lower()
     if (canonical and host and host != canonical
             and request.method in ("GET", "HEAD")
             and not request.url.path.startswith("/api/")):
-        target = config.PUBLIC_URL + request.url.path
+        target = config.CANONICAL_URL + request.url.path
         if request.url.query:
             target += "?" + request.url.query
-        return RedirectResponse(target, status_code=301)
+        # Not 301: browsers cache those, so a wrong PUBLIC_URL would outlive its fix.
+        return RedirectResponse(target, status_code=302)
     return await call_next(request)
 
 

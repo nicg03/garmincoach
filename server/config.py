@@ -79,6 +79,10 @@ PUBLIC_URL = (os.environ.get("PUBLIC_URL")
               or (f"https://{os.environ['RAILWAY_PUBLIC_DOMAIN']}"
                   if os.environ.get("RAILWAY_PUBLIC_DOMAIN") else "")).rstrip("/")
 
+# Pages opened on any other address redirect here. Only an explicit PUBLIC_URL
+# counts: RAILWAY_PUBLIC_DOMAIN may be the Railway address, not the custom one.
+CANONICAL_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
+
 # Shown to new users so they know where to get the sync tool.
 SYNC_REPO_URL = os.environ.get(
     "SYNC_REPO_URL", "https://github.com/nicg03/garmincoach")

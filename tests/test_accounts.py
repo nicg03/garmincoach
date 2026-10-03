@@ -241,16 +241,24 @@ def test_mailer_posts_to_resend(monkeypatch):
 
 def test_pages_move_to_public_url_but_the_api_answers_everywhere(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch)
-    monkeypatch.setattr(config, "PUBLIC_URL", "https://gepard.fit")
+    monkeypatch.setattr(config, "CANONICAL_URL", "https://gepard.fit")
     old = TestClient(app, base_url="https://app.up.railway.app")
 
     page = old.get("/settings?x=1", follow_redirects=False)
-    assert page.status_code == 301
+    assert page.status_code == 302
     assert page.headers["location"] == "https://gepard.fit/settings?x=1"
     assert old.get("/api/config").status_code == 200
     assert old.post("/api/login", json={"email": "a@example.com",
-                                         "password": PASSWORD}).status_code != 301
+                                         "password": PASSWORD}).status_code != 302
     assert TestClient(app, base_url="https://gepard.fit").get("/").status_code == 200
+
+
+def test_no_redirect_without_an_explicit_public_url(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "PUBLIC_URL", "https://app.up.railway.app")
+    monkeypatch.setattr(config, "CANONICAL_URL", "")
+    custom = TestClient(app, base_url="https://gepard.fit")
+    assert custom.get("/", follow_redirects=False).status_code == 200
 
 
 def test_account_delete_removes_tokens(tmp_path, monkeypatch):
