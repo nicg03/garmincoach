@@ -203,6 +203,9 @@ The rest, if you want them:
 | `GARMIN_TOKEN_KEY` | auto | Fernet key for the stored Garmin tokens. Without it a key is generated and kept in the database, next to the tokens; set it (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) so a copy of the database alone can't be used. Changing it asks every user to connect Garmin again. |
 | `GARMIN_SYNC_HOURS` | `4` | How often the server syncs each connected account. |
 | `GARMIN_SCHEDULER` | `1` | Set to `0` to stop background syncs; opening the site and **Sync now** still work. |
+| `ACCOUNT_EMAILS` | `0` | Set to `1` for email verification, password reset and email change. Needs the two below and a domain verified on Resend. |
+| `RESEND_API_KEY` | | Resend key the account emails are sent with. |
+| `EMAIL_FROM` | `gepard.fit <onboarding@resend.dev>` | Sender, e.g. `gepard.fit <noreply@gepard.fit>`; the domain must be verified on Resend. |
 
 **4. Optional: connect GitHub.** Link the repo to the service and every push to
 your chosen branch deploys itself, so `railway up` stops being part of your
@@ -377,8 +380,8 @@ the same cause: users live in the same file.
 - **It's health data on the public internet.** Passwords are scrypt-hashed,
   sessions are HMAC-signed and expire, sync tokens are 32 random bytes and can
   be replaced from Settings → Data sources, and sign-in attempts are throttled per
-  address. Email verification and password reset are in the code but parked
-  (`ACCOUNT_EMAILS`) until a sending domain is set up on Resend. Nothing here
+  address. Email verification and password reset turn on with
+  `ACCOUNT_EMAILS=1` once a sending domain is set up on Resend. Nothing here
   has been through a security audit.
 - **One SQLite file.** Fine for a handful of people pushing once a day, which
   is what this is for. A real user base wants Postgres, which is roughly a

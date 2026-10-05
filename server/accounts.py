@@ -10,8 +10,8 @@ The senders here run as background tasks, after the response has gone out.
 That keeps the forgot-password endpoint equally fast whether or not the
 address has an account.
 
-Parked: ACCOUNT_EMAILS is False until a Resend domain exists. The functions
-below stay so flipping that flag turns verification and reset back on.
+Off unless the ACCOUNT_EMAILS variable is 1, which wants a domain verified on
+Resend first.
 """
 from __future__ import annotations
 

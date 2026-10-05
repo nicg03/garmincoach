@@ -67,8 +67,8 @@ GARMIN_SCHEDULER = os.environ.get("GARMIN_SCHEDULER", "1") != "0"
 
 # Account emails (verification, password reset, email change) go through Resend.
 # Off until a sending domain is verified there: sign-in is email + password only.
-# Flip ACCOUNT_EMAILS to True after RESEND_API_KEY and EMAIL_FROM are set.
-ACCOUNT_EMAILS = False
+# Set ACCOUNT_EMAILS=1 after RESEND_API_KEY and EMAIL_FROM are set.
+ACCOUNT_EMAILS = os.environ.get("ACCOUNT_EMAILS", "0") == "1"
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "gepard.fit <onboarding@resend.dev>")
 

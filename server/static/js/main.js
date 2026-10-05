@@ -210,7 +210,7 @@ function setMode(next) {
   $('#password').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
   $('#gate-role').classList.toggle('hidden', !signup);
   $('#password-hint').classList.toggle('hidden', !signup);
-  // Forgot password is parked until a Resend domain exists.
+  // Forgot password needs account emails (ACCOUNT_EMAILS=1 and a Resend key).
   $('#gate-alt').classList.toggle('hidden', signup || !state.site.email);
   updateHint();
   $('#gate-error').textContent = '';

@@ -53,7 +53,7 @@ def startup_notes() -> list[str]:
         notes.append(f"accounts: {handle.user_count()}")
     notes.append("signup: open" if config.SIGNUP_OPEN else "signup: closed")
     if not config.ACCOUNT_EMAILS:
-        notes.append("email: parked until a Resend domain is set (ACCOUNT_EMAILS)")
+        notes.append("email: off (set ACCOUNT_EMAILS=1 once a Resend domain is verified)")
     elif config.email_enabled():
         notes.append(f"email: on (Resend, from {config.EMAIL_FROM})")
     else:
@@ -216,7 +216,6 @@ def signup(request: Request, response: Response, background: BackgroundTasks,
         return JSONResponse({"error": "That email already has an account."}, 409)
 
     security.sign_in(request, response, user)
-    # Parked until a Resend domain exists. Then ACCOUNT_EMAILS = True.
     if config.ACCOUNT_EMAILS:
         background.add_task(accounts.send_verification, accounts.base_url(request),
                             user["id"])
