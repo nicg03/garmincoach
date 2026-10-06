@@ -10,6 +10,7 @@ import { events, hasData, refreshStatus, role, state } from './core/state.js';
 import { $, $$, agoFromEpoch, busy, errorCard, esc, loadingPage, toast } from './core/ui.js';
 import { destroyCharts, initCharts } from './core/charts.js';
 import { installGlossary } from './core/glossary.js';
+import * as admin from './views/admin.js';
 import * as athletes from './views/athletes.js';
 import * as coaching from './views/coaching.js';
 import * as guide from './views/guide.js';
@@ -18,7 +19,11 @@ import * as settings from './views/settings.js';
 import * as today from './views/today.js';
 import * as training from './views/training.js';
 
-const VIEWS = { today, training, insights, coaching, settings, athletes, guide };
+const VIEWS = { today, training, insights, coaching, settings, athletes, guide, admin };
+
+function isAdmin() {
+  return Boolean(state.status.user && state.status.user.admin);
+}
 
 function title(section) {
   return t(`nav.${section}`);
@@ -31,6 +36,7 @@ const ICON_PATHS = {
   coaching: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   athletes: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/>',
+  admin: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
 };
 
 function icon(name) {
@@ -40,7 +46,8 @@ function icon(name) {
 
 function sections() {
   const own = ['today', 'training', 'insights', 'coaching', 'settings'];
-  return role() === 'coach' ? ['athletes', ...own] : own;
+  const list = role() === 'coach' ? ['athletes', ...own] : own;
+  return isAdmin() ? [...list, 'admin'] : list;
 }
 
 function bottomSections() {
@@ -71,6 +78,7 @@ function renderNav() {
   $('#user-button').textContent = (user.email || '?').slice(0, 1).toUpperCase();
   $('#user-who').innerHTML = `<strong>${esc(user.email || '')}</strong><br>` +
     `<span class="muted">${user.role === 'coach' ? esc(t('nav.coachAccount')) : esc(t('nav.athleteAccount'))}</span>`;
+  $('#menu-admin').classList.toggle('hidden', !isAdmin());
 }
 
 function renderPill() {
@@ -116,7 +124,8 @@ async function onRoute(segments) {
     return;
   }
   const [section, ...rest] = segments;
-  if (!section || !VIEWS[section] || (section === 'athletes' && role() !== 'coach')) {
+  if (!section || !VIEWS[section] || (section === 'athletes' && role() !== 'coach')
+      || (section === 'admin' && !isAdmin())) {
     navigate(home(), { replace: true });
     return;
   }

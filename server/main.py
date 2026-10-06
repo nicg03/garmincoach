@@ -156,6 +156,7 @@ def _public_user(user: dict) -> dict:
         "sync_token": user["sync_token"],
         "role": coaching.role_of(user),
         "email_verified": bool(user.get("email_verified")),
+        "admin": security.is_admin(user),
     }
 
 
@@ -249,6 +250,15 @@ def logout(request: Request, response: Response):
 @app.get("/api/me")
 def me(user: dict = Depends(security.current_user)):
     return _public_user(user)
+
+
+@app.get("/api/admin/users")
+def admin_users(_admin: dict = Depends(security.admin_user)):
+    with db.store() as handle:
+        users = handle.list_users()
+    for user in users:
+        user["email_verified"] = bool(user["email_verified"])
+    return {"users": users}
 
 
 @app.post("/api/token/rotate")

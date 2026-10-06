@@ -196,6 +196,7 @@ The rest, if you want them:
 | `COACH_DETAIL_DAYS` | `90` | How many days the coach sees day by day. |
 | `SIGNUP_OPEN` | `1` | Set to `0` to stop new accounts without a redeploy. Existing users keep working. |
 | `MIN_PASSWORD` | `8` | Shortest password accepted at signup. |
+| `ADMIN_EMAILS` | | Comma-separated emails that get an **Admin** area listing every registered account (email, role, signup date, verified). Everyone else gets a 404. |
 | `SESSION_DAYS` | `30` | How long a sign-in lasts. |
 | `SESSION_SECRET` | auto | Overrides the stored secret. Setting or changing it signs every device out -- the emergency lever if a cookie leaks. |
 | `DEFAULT_WINDOW_DAYS` | `90` | The dashboard's default range. |

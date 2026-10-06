@@ -269,3 +269,21 @@ def test_account_delete_removes_tokens(tmp_path, monkeypatch):
         left = handle.conn.execute(
             "SELECT COUNT(*) c FROM email_tokens WHERE user_id = ?", (user["id"],)).fetchone()
     assert left["c"] == 0
+
+
+def test_only_admin_emails_see_every_account(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "ADMIN_EMAILS", frozenset({"boss@example.com"}))
+    athlete, user = _signup("a@example.com")
+    boss, boss_user = _signup("boss@example.com")
+    assert user["admin"] is False
+    assert boss_user["admin"] is True
+
+    assert athlete.get("/api/admin/users").status_code == 404
+    assert TestClient(app).get("/api/admin/users").status_code == 401
+
+    response = boss.get("/api/admin/users")
+    assert response.status_code == 200, response.text
+    users = response.json()["users"]
+    assert [u["email"] for u in users] == ["boss@example.com", "a@example.com"]
+    assert set(users[0]) == {"id", "email", "role", "created", "email_verified"}

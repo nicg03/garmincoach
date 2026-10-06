@@ -165,6 +165,19 @@ def current_user(request: Request) -> dict:
     return user
 
 
+def is_admin(user: dict) -> bool:
+    return (user.get("email") or "").lower() in config.ADMIN_EMAILS
+
+
+def admin_user(request: Request) -> dict:
+    """The signed-in account if it's listed in ADMIN_EMAILS. Anyone else gets
+    the same 404 as a route that doesn't exist."""
+    user = current_user(request)
+    if not is_admin(user):
+        raise HTTPException(404, "Not Found")
+    return user
+
+
 def sign_in(request: Request, response, user: dict) -> None:
     response.set_cookie(COOKIE_NAME,
                         issue_session(user["id"], user.get("session_version", 0)),

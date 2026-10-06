@@ -335,6 +335,13 @@ class Store:
     def user_count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
 
+    def list_users(self) -> list[dict]:
+        """Every account, newest first, without passwords or tokens."""
+        rows = self.conn.execute(
+            "SELECT id, email, role, created, email_verified FROM users "
+            "ORDER BY id DESC")
+        return [dict(r) for r in rows]
+
     def set_password(self, user_id: int, password_hash: str) -> None:
         self.conn.execute("UPDATE users SET password = ? WHERE id = ?",
                           (password_hash, user_id))

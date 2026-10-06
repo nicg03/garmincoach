@@ -42,6 +42,10 @@ SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "30"))
 SIGNUP_OPEN = os.environ.get("SIGNUP_OPEN", "1") != "0"
 MIN_PASSWORD = int(os.environ.get("MIN_PASSWORD", "8"))
 
+# Accounts that see the Admin area (every registered account). Comma-separated.
+ADMIN_EMAILS = frozenset(
+    e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip())
+
 # Coach: OpenAI wins if both keys are set. Either one turns the coach on.
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1")
