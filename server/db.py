@@ -8,14 +8,30 @@ can return another account's rows.
 """
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import date
+from typing import Any, Callable
 
 from . import config
 from .store import EmailTaken, Store, normalise_email, open_store  # noqa: F401
 
 SESSION_SECRET_KEY = "session_secret"
 GARMIN_TOKEN_KEY = "garmin_token_key"
+
+# Settings that never change once minted, read on every request otherwise.
+_settings: dict[tuple[str, str], str] = {}
+
+
+def _ensure_setting(key: str, factory) -> str:
+    cache_key = (str(config.DB_PATH), key)
+    value = _settings.get(cache_key)
+    if value is None:
+        with store() as handle:
+            value = handle.ensure_setting(key, factory)
+        _settings[cache_key] = value
+    return value
 
 
 @contextmanager
@@ -35,8 +51,7 @@ def session_secret() -> str:
         return config.SESSION_SECRET
     from .store import new_token
 
-    with store() as handle:
-        return handle.ensure_setting(SESSION_SECRET_KEY, new_token)
+    return _ensure_setting(SESSION_SECRET_KEY, new_token)
 
 
 def garmin_token_key() -> str:
@@ -45,9 +60,7 @@ def garmin_token_key() -> str:
         return config.GARMIN_TOKEN_KEY
     from cryptography.fernet import Fernet
 
-    with store() as handle:
-        return handle.ensure_setting(
-            GARMIN_TOKEN_KEY, lambda: Fernet.generate_key().decode())
+    return _ensure_setting(GARMIN_TOKEN_KEY, lambda: Fernet.generate_key().decode())
 
 
 def status(user_id: int) -> dict:
@@ -71,6 +84,58 @@ def window(user_id: int, start: str | None,
                 handle.activities_between(user_id, start, end))
 
 
+# ---- derived results --------------------------------------------------------
+# Full-history builds (metrics, performance) are the most expensive thing a
+# request does and only change when new data lands, which always goes through
+# `ingest`. They are cached per user and per calendar day, in this process.
+# Callers must treat the returned dicts as read-only.
+DERIVED_CACHE_SIZE = 512
+_versions: dict[int, int] = {}
+_derived: OrderedDict = OrderedDict()
+_derived_guard = threading.Lock()
+
+
+def changed(user_id: int) -> None:
+    """Forget everything derived from this user's history."""
+    with _derived_guard:
+        _versions[user_id] = _versions.get(user_id, 0) + 1
+
+
+def derived(user_id: int, name: str, compute: Callable[[], Any]) -> Any:
+    stamp = (_versions.get(user_id, 0), date.today().isoformat(), str(config.DB_PATH))
+    key = (user_id, name)
+    with _derived_guard:
+        hit = _derived.get(key)
+        if hit and hit[0] == stamp:
+            _derived.move_to_end(key)
+            return hit[1]
+    value = compute()
+    with _derived_guard:
+        _derived[key] = (stamp, value)
+        _derived.move_to_end(key)
+        while len(_derived) > DERIVED_CACHE_SIZE:
+            _derived.popitem(last=False)
+    return value
+
+
+def full_metrics(user_id: int) -> dict:
+    """`metrics.build` over the whole history."""
+    from garmin_sync import metrics
+
+    return derived(user_id, "metrics", lambda: metrics.build(*window(user_id, None, None)))
+
+
+def full_performance(user_id: int, with_meta: bool = True) -> dict:
+    """`performance.build` over every activity, with or without Garmin's meta."""
+    from garmin_sync import performance
+
+    def compute() -> dict:
+        activities = window(user_id, None, None)[1]
+        return performance.build(activities, meta(user_id) if with_meta else None)
+
+    return derived(user_id, "performance+meta" if with_meta else "performance", compute)
+
+
 def ingest(user_id: int, activities: list[dict], days: list[dict],
            meta: dict | None = None) -> dict:
     """Upsert a pushed bundle. Idempotent: re-pushing the same range only
@@ -79,6 +144,10 @@ def ingest(user_id: int, activities: list[dict], days: list[dict],
     """
     stored = {"activities": 0, "days": 0, "meta": 0, "skipped": 0}
     with store() as handle:
+        if not handle.user_by_id(user_id):
+            # Deleted while a sync was still running: nothing may be stored.
+            stored["skipped"] = len(activities) + len(days)
+            return stored
         for activity in activities:
             if not isinstance(activity, dict) or activity.get("id") is None:
                 stored["skipped"] += 1
@@ -97,6 +166,7 @@ def ingest(user_id: int, activities: list[dict], days: list[dict],
             handle.set_meta(user_id, key, value)
             stored["meta"] += 1
         handle.commit()
+    changed(user_id)
     try:
         from . import planning
         stored["matched"] = planning.match_completed(user_id)

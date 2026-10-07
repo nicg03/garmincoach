@@ -53,9 +53,10 @@ CHUNK_SIZE = 24
 # A page load refreshes the data when the last sync is older than this.
 STALE_ON_OPEN_SECONDS = 3600
 
-# History rounds per run. A background run after connecting walks far; the
-# scheduler nibbles so no single tick holds Garmin for minutes.
-HISTORY_ROUNDS_FIRST = 40
+# History rounds per run (one round is ~45 days, ~190 requests). A run after
+# connecting walks a little further; the scheduler then nibbles the rest, so
+# a new account never holds the shared outbound IP for an hour.
+HISTORY_ROUNDS_FIRST = 6
 HISTORY_ROUNDS_TICK = 3
 HISTORY_PAGES = 8
 HISTORY_DAYS = 45
@@ -75,6 +76,9 @@ _pending: dict[str, dict] = {}
 _locks: dict[int, threading.Lock] = {}
 _locks_guard = threading.Lock()
 _running: set[int] = set()
+# Every account syncs from the same outbound IP, and Garmin rate limits per
+# IP, so only a few syncs may talk to Garmin at once.
+_slots = threading.BoundedSemaphore(max(1, config.GARMIN_MAX_PARALLEL_SYNCS))
 
 
 def _log(message: str) -> None:
@@ -388,9 +392,20 @@ def _add_totals(into: dict, extra: dict) -> dict:
     return into
 
 
+class Disconnected(GarminError):
+    """The account or its Garmin connection went away during a run."""
+
+
+def _still_connected(user_id: int) -> None:
+    with db.store() as handle:
+        if not handle.garmin_account(user_id):
+            raise Disconnected("Garmin was disconnected during the sync.")
+
+
 def _fetch_and_store(user_id: int, session: Session, specs: list[dict]) -> dict:
     totals = _empty_totals()
     for chunk in _chunks(specs):
+        _still_connected(user_id)
         results = {spec["label"]: session.get(spec["path"]) for spec in chunk}
         totals["failures"] += sum(
             1 for v in results.values() if isinstance(v, dict) and "__error" in v)
@@ -546,11 +561,13 @@ def sync(user_id: int, history_rounds: int = HISTORY_ROUNDS_TICK) -> dict:
             backfill = history["cursor"]
         except SessionExpired as e:
             with db.store() as handle:
-                handle.update_garmin_account(user_id, needs_login=1, last_error=str(e))
+                handle.update_garmin_account(user_id, needs_login=1, last_error=str(e),
+                                             last_result=_failed_attempt(account))
             raise
         except GarminError as e:
             with db.store() as handle:
-                handle.update_garmin_account(user_id, last_error=str(e))
+                handle.update_garmin_account(user_id, last_error=str(e),
+                                             last_result=_failed_attempt(account))
             raise
         finally:
             fresh = session.dumps() if session else tokens
@@ -565,6 +582,8 @@ def sync(user_id: int, history_rounds: int = HISTORY_ROUNDS_TICK) -> dict:
         result["error_retries"] = (
             int(prev.get("error_retries") or 0) + 1 if list_failed else 0)
         with db.store() as handle:
+            if not handle.garmin_account(user_id):
+                return result
             fields = {"last_result": result, "backfill": backfill}
             if list_failed:
                 fields["last_error"] = ACTIVITY_LIST_FAILED_MSG
@@ -592,6 +611,14 @@ def sync(user_id: int, history_rounds: int = HISTORY_ROUNDS_TICK) -> dict:
         lock.release()
 
 
+def _failed_attempt(account: dict | None) -> dict:
+    """`last_result` after a run that stopped early, so the error backoff
+    counts from now rather than from the last run that finished."""
+    prev = (account or {}).get("last_result") or {}
+    return {**prev, "attempted_at": time.time(),
+            "error_retries": int(prev.get("error_retries") or 0) + 1}
+
+
 def _safe_sync(user_id: int, history_rounds: int) -> None:
     try:
         sync(user_id, history_rounds=history_rounds)
@@ -600,19 +627,36 @@ def _safe_sync(user_id: int, history_rounds: int) -> None:
     except Exception as e:  # noqa: BLE001
         _log(f"sync user={user_id} crashed: {type(e).__name__}: {e}")
         with db.store() as handle:
-            handle.update_garmin_account(
-                user_id, last_error="The last sync failed unexpectedly. It will retry.")
+            account = handle.garmin_account(user_id)
+            if account:
+                handle.update_garmin_account(
+                    user_id, last_error="The last sync failed unexpectedly. It will retry.",
+                    last_result=_failed_attempt(account))
 
 
 def kick(user_id: int, history_rounds: int = HISTORY_ROUNDS_TICK) -> bool:
-    """Start a sync in the background. False if one is already running."""
+    """Start a sync in the background. False if one is already running for
+    this account, or every slot is busy (the scheduler catches up later)."""
     with _locks_guard:
         if user_id in _running:
             return False
+        if not _slots.acquire(blocking=False):
+            return False
         _running.add(user_id)
-    threading.Thread(target=_safe_sync, args=(user_id, history_rounds),
-                     daemon=True, name=f"garmin-sync-{user_id}").start()
+
+    def run() -> None:
+        try:
+            _safe_sync(user_id, history_rounds)
+        finally:
+            _slots.release()
+
+    threading.Thread(target=run, daemon=True, name=f"garmin-sync-{user_id}").start()
     return True
+
+
+def _scheduled_sync(user_id: int) -> None:
+    with _slots:
+        _safe_sync(user_id, HISTORY_ROUNDS_TICK)
 
 
 def _ready_after_error(account: dict, now: float) -> bool:
@@ -663,7 +707,7 @@ async def scheduler() -> None:
     while True:
         try:
             for user_id in due_users():
-                await asyncio.to_thread(_safe_sync, user_id, HISTORY_ROUNDS_TICK)
+                await asyncio.to_thread(_scheduled_sync, user_id)
                 await asyncio.sleep(random.uniform(5, 20))
         except Exception as e:  # noqa: BLE001
             _log(f"scheduler error: {type(e).__name__}: {e}")

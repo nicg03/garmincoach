@@ -42,6 +42,10 @@ SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "30"))
 SIGNUP_OPEN = os.environ.get("SIGNUP_OPEN", "1") != "0"
 MIN_PASSWORD = int(os.environ.get("MIN_PASSWORD", "8"))
 
+# Proxies in front of the app that append to X-Forwarded-For (Railway's edge
+# is one). Zero ignores the header and uses the socket address.
+TRUSTED_PROXY_HOPS = int(os.environ.get("TRUSTED_PROXY_HOPS", "1"))
+
 # Accounts that see the Admin area (every registered account). Comma-separated.
 ADMIN_EMAILS = frozenset(
     e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip())
@@ -53,9 +57,11 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
 COACH_MAX_TOKENS = int(os.environ.get("COACH_MAX_TOKENS", "1500"))
 
-# Coach calls per user per day. Zero means no ceiling; the key is shared, so
-# this is the dial to turn if the bill ever gets interesting.
-COACH_DAILY_LIMIT = int(os.environ.get("COACH_DAILY_LIMIT", "0"))
+# Coach calls per user per day. Zero means no ceiling; the key is shared and
+# signup is open, so the default keeps one account from running up the bill.
+COACH_DAILY_LIMIT = int(os.environ.get("COACH_DAILY_LIMIT", "30"))
+# A provider call that hangs holds one of the server's worker threads.
+COACH_TIMEOUT_SECONDS = float(os.environ.get("COACH_TIMEOUT_SECONDS", "60"))
 
 # How much history the dashboard loads by default, and how much detail the
 # coach gets before falling back to weekly aggregates.
@@ -68,6 +74,11 @@ COACH_DETAIL_DAYS = int(os.environ.get("COACH_DETAIL_DAYS", "90"))
 GARMIN_TOKEN_KEY = os.environ.get("GARMIN_TOKEN_KEY", "")
 GARMIN_SYNC_HOURS = float(os.environ.get("GARMIN_SYNC_HOURS", "4"))
 GARMIN_SCHEDULER = os.environ.get("GARMIN_SCHEDULER", "1") != "0"
+# Syncs talking to Garmin at the same time, across all accounts.
+GARMIN_MAX_PARALLEL_SYNCS = int(os.environ.get("GARMIN_MAX_PARALLEL_SYNCS", "2"))
+
+# Daily database snapshots kept on the volume. Zero switches them off.
+BACKUP_KEEP = int(os.environ.get("BACKUP_KEEP", "7"))
 
 # Account emails (verification, password reset, email change) go through Resend.
 # Off until a sending domain is verified there: sign-in is email + password only.

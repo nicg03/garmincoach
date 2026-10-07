@@ -154,7 +154,8 @@ let pollTimer = null;
 
 function pollDelay() {
   const g = state.status.garmin || {};
-  if (g.running || g.last_error || !hasData()) return 4000;
+  if (g.running) return 4000;
+  if (!hasData() && !g.last_error) return 10000;
   return 60000;
 }
 

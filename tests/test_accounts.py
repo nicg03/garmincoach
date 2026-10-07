@@ -287,3 +287,42 @@ def test_only_admin_emails_see_every_account(tmp_path, monkeypatch):
     users = response.json()["users"]
     assert [u["email"] for u in users] == ["boss@example.com", "a@example.com"]
     assert set(users[0]) == {"id", "email", "role", "created", "email_verified"}
+
+
+def test_spoofed_forwarded_for_does_not_reset_the_lockout(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    _signup()
+    client = TestClient(app)
+    for i in range(security.MAX_ATTEMPTS):
+        client.post("/api/login", json={"email": "a@example.com", "password": "wrong"},
+                    headers={"x-forwarded-for": f"10.0.0.{i}, 203.0.113.7"})
+    blocked = client.post("/api/login", json={"email": "a@example.com", "password": PASSWORD},
+                          headers={"x-forwarded-for": "10.9.9.9, 203.0.113.7"})
+    assert blocked.status_code == 429
+    other = client.post("/api/login", json={"email": "a@example.com", "password": PASSWORD},
+                        headers={"x-forwarded-for": "198.51.100.1"})
+    assert other.status_code == 200
+
+
+def test_signups_are_throttled_per_address(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    client = TestClient(app)
+    codes = [client.post("/api/signup", json={
+        "email": f"u{i}@example.com", "password": PASSWORD}).status_code
+        for i in range(security.MAX_ATTEMPTS + 1)]
+    assert codes[:security.MAX_ATTEMPTS] == [200] * security.MAX_ATTEMPTS
+    assert codes[-1] == 429
+
+
+def test_stale_throttle_entries_are_swept(monkeypatch):
+    monkeypatch.setattr(security, "MAX_TRACKED", 2)
+    old = time.time() - security.LOCKOUT_SECONDS - 1
+    for i in range(5):
+        security._attempts[f"auth:1.1.1.{i}"].append(old)
+
+    class Req:
+        headers = {}
+        client = type("C", (), {"host": "9.9.9.9"})()
+
+    assert security.locked_out(Req()) is False
+    assert len(security._attempts) == 0

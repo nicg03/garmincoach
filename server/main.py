@@ -25,13 +25,14 @@ import time
 
 from fastapi import (BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query,
                      Request, Response)
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from garmin_sync import metrics
 
-from . import (accounts, coach, coaching, config, db, garmin_connect,
+from . import (accounts, backup, coach, coaching, config, db, garmin_connect,
                garmin_export, garmin_fetch, ingest, security)
 from .store import EmailTaken
 
@@ -78,6 +79,15 @@ def startup_notes() -> list[str]:
                          "token key lives in the database next to the tokens.")
     else:
         notes.append("garmin direct: off (garminconnect not installed)")
+    notes.append(f"backups: daily, keeping {config.BACKUP_KEEP} in {backup.backup_dir()}"
+                 if config.BACKUP_KEEP > 0 else "backups: off (BACKUP_KEEP=0)")
+    if not os.environ.get("TZ"):
+        notes.append("TZ is not set: 'today' follows the server clock (UTC on "
+                     "Railway), so it turns over hours early or late for users. "
+                     "Set TZ, e.g. TZ=Europe/Rome.")
+    if not config.SESSION_SECRET:
+        notes.append("SESSION_SECRET is not set: the cookie-signing secret lives "
+                     "in the database and in every backup of it.")
     return notes
 
 
@@ -85,11 +95,13 @@ def startup_notes() -> list[str]:
 async def lifespan(_app: FastAPI):
     for note in startup_notes():
         print(f"[garmin-sync] {note}", flush=True)
-    task = None
+    tasks = []
     if config.GARMIN_SCHEDULER and garmin_connect.available():
-        task = asyncio.create_task(garmin_connect.scheduler())
+        tasks.append(asyncio.create_task(garmin_connect.scheduler()))
+    if config.BACKUP_KEEP > 0:
+        tasks.append(asyncio.create_task(backup.loop()))
     yield
-    if task:
+    for task in tasks:
         task.cancel()
 
 
@@ -197,8 +209,9 @@ def signup(request: Request, response: Response, background: BackgroundTasks,
            role: str = Body("athlete", embed=True)):
     if not config.SIGNUP_OPEN:
         return JSONResponse({"error": "Signups are closed right now."}, 403)
-    if security.locked_out(request):
+    if security.locked_out(request) or security.locked_out(request, "signup"):
         return JSONResponse({"error": "Too many attempts. Try again later."}, 429)
+    security.record_failure(request, "signup")
 
     problem = security.email_problem(email) or security.password_problem(password)
     if problem:
@@ -584,10 +597,7 @@ from . import planning
 @app.get("/api/performance")
 def performance_view(athlete_id: int | None = Query(None),
                      user: dict = Depends(security.current_user)):
-    from garmin_sync.performance import build as build_perf
-    uid = _subject_id(user, athlete_id)
-    _days, activities = db.window(uid, None, None)
-    return build_perf(activities, db.meta(uid))
+    return db.full_performance(_subject_id(user, athlete_id))
 
 
 @app.get("/api/athlete")
@@ -695,9 +705,7 @@ def patch_session(session_id: str, payload: dict[str, Any] = Body(...),
 
 @app.get("/api/workouts")
 def get_workouts(user: dict = Depends(security.current_user)):
-    from garmin_sync.performance import build as build_perf
-    _days, activities = db.window(user["id"], None, None)
-    paces = build_perf(activities).get("paces") or {}
+    paces = db.full_performance(user["id"], with_meta=False).get("paces") or {}
     return {"workouts": planning.templates(user["id"], paces)}
 
 
@@ -1121,15 +1129,15 @@ async def import_garmin_export(request: Request,
         if not size:
             return JSONResponse({"error": "No file arrived."}, 400)
         try:
-            found = garmin_export.read_archive(Path(tmp.name))
+            found = await run_in_threadpool(garmin_export.read_archive, Path(tmp.name))
         except garmin_export.NotAnExport as e:
             return JSONResponse({"error": str(e)}, 400)
     finally:
         Path(tmp.name).unlink(missing_ok=True)
 
-    stored = db.ingest(user["id"], found.activities, found.days)
+    stored = await run_in_threadpool(db.ingest, user["id"], found.activities, found.days)
     return {"ok": True, "stored": stored, "report": found.report,
-            **db.status(user["id"])}
+            **(await run_in_threadpool(db.status, user["id"]))}
 
 
 @app.get("/api/meta")

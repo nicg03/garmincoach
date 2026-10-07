@@ -39,6 +39,8 @@ SCRYPT_P = 1
 
 MAX_ATTEMPTS = 10
 LOCKOUT_SECONDS = 900
+# Past this many tracked addresses, stale entries are swept on the next check.
+MAX_TRACKED = 10_000
 _attempts: dict[str, list[float]] = defaultdict(list)
 
 
@@ -126,17 +128,32 @@ def session_claims(token: str | None) -> dict | None:
 
 # ---- throttling -------------------------------------------------------------
 def _client(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """The caller's address. Each proxy appends to X-Forwarded-For, so only
+    the entries our own proxies added can be trusted; anything to their left
+    was written by the client and changes freely between attempts."""
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    if hops and config.TRUSTED_PROXY_HOPS > 0:
+        return hops[-min(config.TRUSTED_PROXY_HOPS, len(hops))]
     return request.client.host if request.client else "unknown"
 
 
+def _prune(now: float) -> None:
+    cutoff = now - LOCKOUT_SECONDS
+    for who in [k for k, v in _attempts.items() if not v or v[-1] <= cutoff]:
+        _attempts.pop(who, None)
+
+
 def locked_out(request: Request, bucket: str = "auth") -> bool:
+    now = time.time()
+    if len(_attempts) > MAX_TRACKED:
+        _prune(now)
     who = f"{bucket}:{_client(request)}"
-    cutoff = time.time() - LOCKOUT_SECONDS
-    _attempts[who] = [t for t in _attempts[who] if t > cutoff]
-    return len(_attempts[who]) >= MAX_ATTEMPTS
+    recent = [t for t in _attempts.get(who, []) if t > now - LOCKOUT_SECONDS]
+    if recent:
+        _attempts[who] = recent
+    else:
+        _attempts.pop(who, None)
+    return len(recent) >= MAX_ATTEMPTS
 
 
 def record_failure(request: Request, bucket: str = "auth") -> None:

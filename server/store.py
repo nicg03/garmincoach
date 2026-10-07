@@ -18,6 +18,7 @@ import hashlib
 import json
 import secrets
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 from datetime import date
@@ -205,18 +206,30 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+# Database files whose schema is already in place in this process. Every
+# request opens several connections; only the first needs the DDL.
+_ready: set[str] = set()
+_ready_guard = threading.Lock()
+
+
 class Store:
     def __init__(self, db_path: Path):
         self.db_path = db_path
+        key = str(Path(db_path).resolve())
+        fresh = key not in _ready or not Path(db_path).exists()
         self.conn = sqlite3.connect(db_path)
         self.conn.row_factory = sqlite3.Row
-        # WAL lets the dashboard read while a push writes; the busy timeout
-        # stops two simultaneous pushes from failing outright.
-        self.conn.execute("PRAGMA journal_mode=WAL")
+        # The busy timeout stops two simultaneous pushes from failing outright.
         self.conn.execute("PRAGMA busy_timeout=5000")
-        self.conn.executescript(SCHEMA)
-        self._migrate()
-        self.conn.commit()
+        if fresh:
+            with _ready_guard:
+                # WAL lets the dashboard read while a push writes. It is a
+                # property of the file, so setting it once is enough.
+                self.conn.execute("PRAGMA journal_mode=WAL")
+                self.conn.executescript(SCHEMA)
+                self._migrate()
+                self.conn.commit()
+                _ready.add(key)
 
     def _migrate(self) -> None:
         """Columns and tables added after the first install."""

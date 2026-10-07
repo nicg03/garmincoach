@@ -11,7 +11,7 @@ import json
 from datetime import date, timedelta
 from uuid import uuid4
 
-from garmin_sync import garmin_workout, insights, library, metrics, performance, planner
+from garmin_sync import garmin_workout, insights, library, performance, planner
 from garmin_sync.workout_dsl import WorkoutError, validate
 
 from . import coach, config, db
@@ -436,8 +436,7 @@ def decide_today(user_id: int) -> dict:
     if plan:
         session = next((s for s in plan.get("sessions") or []
                         if s.get("date") == today), None)
-    days, activities = db.window(user_id, None, None)
-    built = metrics.build(days, activities)
+    built = db.full_metrics(user_id)
     head = built.get("headline") or {}
     hrv_delta = head.get("hrv_delta")
     rhr_delta = head.get("resting_hr_delta")
@@ -546,8 +545,7 @@ def race_review(user_id: int, race_id: str) -> dict:
     if not race:
         raise ValueError("Unknown race.")
     _, activities = db.window(user_id, race["date"], race["date"])
-    all_acts = db.window(user_id, None, None)[1]
-    perf = performance.build(all_acts, db.meta(user_id))
+    perf = db.full_performance(user_id)
     actual = next((a for a in activities if planner.match_activity(
         {"date": race["date"], "sport": race.get("sport") or "running"}, [a])), None)
     pred = next((p for p in perf.get("predictions") or []

@@ -59,9 +59,12 @@ site says "Reconnect Garmin" instead of failing silently. Run
   Disconnect or account deletion.
 - A scheduler in the app's lifespan syncs every connected account every
   `GARMIN_SYNC_HOURS`, one at a time with jitter, and opening the site starts a
-  sync when the last one is over an hour old. Each run fetches the new days,
-  writes queued workouts to Garmin, then walks a little further back into the
-  history until it reaches the start.
+  sync when the last one is over an hour old. Across all accounts, at most
+  `GARMIN_MAX_PARALLEL_SYNCS` talk to Garmin at once. Each run fetches the new
+  days, writes queued workouts to Garmin, then walks a little further back into
+  the history until it reaches the start (five years of wellness takes a couple
+  of days of runs). A run that fails waits 15 minutes, then an hour, before the
+  next attempt.
 - The fetch plan is the same one the extension runs (`server/garmin_fetch.py`),
   and the results go through the same `ingest.normalise`, so all sources store
   identical rows. A per-user lock keeps two syncs of one account from
@@ -185,13 +188,25 @@ default, including the secret that signs session cookies: it's generated on
 first boot and kept in the database on the volume, so sign-ins survive
 restarts without you configuring anything.
 
+**4. Set three more before real users arrive.** Each has a default that works,
+but the default is the wrong long-term answer:
+
+| Variable | Why |
+| --- | --- |
+| `TZ` | e.g. `Europe/Rome`. "Today" (the briefing, today's decision, which session is due) follows the server clock, and Railway's is UTC, so without it the day turns over two hours late in Italy. |
+| `GARMIN_TOKEN_KEY` | Keeps the key for the stored Garmin tokens out of the database, so the file (and every backup of it) can't be used to read them. Set it before anyone connects Garmin: changing it later asks everyone to connect again. |
+| `SESSION_SECRET` | Same idea for the cookie-signing secret. Setting it signs everyone out once, so do it early. |
+
+The deploy log lists whichever of these is missing.
+
 The rest, if you want them:
 
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `OPENAI_MODEL` | `gpt-4.1` | Which OpenAI model answers. |
 | `ANTHROPIC_MODEL` | `claude-sonnet-4-5` | Which Claude model answers (if using Anthropic). |
-| `COACH_DAILY_LIMIT` | `0` (no limit) | Coach questions per user per day. The API key is shared by every account, so this is the dial to turn if the bill gets interesting. |
+| `COACH_DAILY_LIMIT` | `30` | Coach questions (and the daily briefing) per user per day. The API key is shared by every account and signup is open, so keep a ceiling. `0` removes it. |
+| `COACH_TIMEOUT_SECONDS` | `60` | Longest a provider call may take before it fails. A hung call holds one of the server's worker threads. |
 | `COACH_MAX_TOKENS` | `1500` | Ceiling on a single answer. |
 | `COACH_DETAIL_DAYS` | `90` | How many days the coach sees day by day. |
 | `SIGNUP_OPEN` | `1` | Set to `0` to stop new accounts without a redeploy. Existing users keep working. |
@@ -204,15 +219,26 @@ The rest, if you want them:
 | `GARMIN_TOKEN_KEY` | auto | Fernet key for the stored Garmin tokens. Without it a key is generated and kept in the database, next to the tokens; set it (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) so a copy of the database alone can't be used. Changing it asks every user to connect Garmin again. |
 | `GARMIN_SYNC_HOURS` | `4` | How often the server syncs each connected account. |
 | `GARMIN_SCHEDULER` | `1` | Set to `0` to stop background syncs; opening the site and **Sync now** still work. |
+| `GARMIN_MAX_PARALLEL_SYNCS` | `2` | Syncs talking to Garmin at once, across all accounts. They all leave from the same IP and Garmin rate limits per IP, so raise it carefully. |
+| `TRUSTED_PROXY_HOPS` | `1` | Proxies in front of the app that append to `X-Forwarded-For` (Railway's edge is one). Sign-in throttling counts the address that many hops from the right, so a client can't dodge it by sending its own header. `0` uses the socket address. |
+| `BACKUP_KEEP` | `7` | Daily database snapshots kept in `/data/backups`. `0` turns them off. |
 | `ACCOUNT_EMAILS` | `0` | Set to `1` for email verification, password reset and email change. Needs the two below and a domain verified on Resend. |
 | `RESEND_API_KEY` | | Resend key the account emails are sent with. |
 | `EMAIL_FROM` | `gepard.fit <onboarding@resend.dev>` | Sender, e.g. `gepard.fit <noreply@gepard.fit>`; the domain must be verified on Resend. |
 
-**4. Optional: connect GitHub.** Link the repo to the service and every push to
+**5. Backups.** The app writes a consistent snapshot of the database to
+`/data/backups/site-YYYY-MM-DD.db` once a day and keeps the last
+`BACKUP_KEEP`. Those copies live on the same volume: they cover a bad deploy
+or a mistaken deletion, not losing the volume. For that, turn on backups for
+the volume in Railway (service → **Data** → the volume → **Backups**). To
+restore, stop the service, copy a snapshot over `/data/site.db` (and delete
+`site.db-wal` and `site.db-shm` next to it), then start it again.
+
+**6. Optional: connect GitHub.** Link the repo to the service and every push to
 your chosen branch deploys itself, so `railway up` stops being part of your
 life.
 
-**5. Custom domain.** Service → **Settings** → **Networking** → **Custom
+**7. Custom domain.** Service → **Settings** → **Networking** → **Custom
 Domain**, enter `gepard.fit` (and `www.gepard.fit` if you want it), and add
 the records Railway shows at the registrar. Once the certificate is issued,
 set `PUBLIC_URL=https://gepard.fit`: pages opened on any other address
@@ -238,7 +264,9 @@ the same command and the raw token for recovery.
 `railway.json` pins the start command and sets `overlapSeconds: 0`. That last
 one matters more than it looks: Railway normally runs the old and new
 containers side by side for a moment during a deploy, and with one SQLite file
-on one volume that would mean two processes writing to the same database.
+on one volume that would mean two processes writing to the same database. It
+also points Railway's health check at `/api/config` and restarts the container
+whenever it stops, not just for the first few crashes.
 
 ## Run it locally first
 
@@ -376,17 +404,23 @@ the same cause: users live in the same file.
 - **Session is IP-bound.** Cloudflare clearance is tied to your IP; if it
   changes, you may need to `login` again.
 - **Signup is open, and the Anthropic key is shared.** Anyone who finds the URL
-  can create an account and ask the coach questions on your API key. Set
-  `COACH_DAILY_LIMIT` to cap it, or `SIGNUP_OPEN=0` to close the door.
+  can create an account and ask the coach questions on your API key.
+  `COACH_DAILY_LIMIT` caps each account (30 a day by default), signups are
+  throttled per address, and `SIGNUP_OPEN=0` closes the door.
 - **It's health data on the public internet.** Passwords are scrypt-hashed,
   sessions are HMAC-signed and expire, sync tokens are 32 random bytes and can
   be replaced from Settings → Data sources, and sign-in attempts are throttled per
   address. Email verification and password reset turn on with
   `ACCOUNT_EMAILS=1` once a sending domain is set up on Resend. Nothing here
   has been through a security audit.
-- **One SQLite file.** Fine for a handful of people pushing once a day, which
-  is what this is for. A real user base wants Postgres, which is roughly a
-  day's work from here.
+- **One process, one SQLite file, one outbound IP.** `scripts/bench.py` puts
+  five years of history on one account (about 2 MB) and times the dashboard:
+  a full visit costs well under 100 ms of server time, so the web side holds
+  thousands of users. The ceiling is Garmin: every direct sync leaves from
+  the same IP, which caps the direct connection at a few hundred accounts
+  syncing every four hours, and fewer new accounts a day. Past that, the sync
+  wants its own worker with several outbound IPs, and the data wants
+  Postgres.
 - **Terms of service.** This accesses your own data (GDPR Article 20 gives you
   a portability right to it), but automated access still runs against Garmin's
   developer terms. Keep request volume low and personal.
@@ -420,6 +454,7 @@ server/               the site
   coach.py            context building and the Anthropic calls
   garmin_connect.py   direct Garmin connection: login, tokens, sync, scheduler
   garmin_fetch.py     the fetch plan shared with the extension
+  backup.py           daily VACUUM INTO snapshots on the volume
   static/             the page itself (ES modules, Chart.js from a CDN, no build step)
     index.html        shell: sign-in gate, sidebar / bottom bar, one view at a time
     css/              tokens.css, layout.css, components.css
@@ -429,5 +464,6 @@ server/               the site
     js/views/         today, training, insights, coaching, settings, athletes, onboarding
 extension/            the fallback browser extension
 scripts/garmin_spike.py  checks the direct connection from any machine
+scripts/bench.py      times the heavy pages for one account with years of history
 data/                 garmin.db (yours), site.db (the site's), session, config
 ```

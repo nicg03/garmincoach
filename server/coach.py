@@ -148,7 +148,7 @@ def build_context(user_id: int) -> str:
     info = db.status(user_id)
     all_days, all_activities = db.window(user_id, None, None)
     built = metrics.build(all_days, all_activities, visible_from=detail_start)
-    everything = metrics.build(all_days, all_activities)
+    everything = db.full_metrics(user_id)
 
     recent_cut = (today - timedelta(days=28)).isoformat()
     recent = [a for a in all_activities if (a.get("start") or "")[:10] >= recent_cut]
@@ -172,10 +172,9 @@ def build_context(user_id: int) -> str:
 
 def _pacing_context(user_id: int, activities: list[dict]) -> str:
     """Paces and today's planned session so the coach doesn't fight the plan."""
-    from garmin_sync.performance import build as build_perf
     chunks = ["## Training paces (Daniels, min/km)"]
     try:
-        perf = build_perf(activities)
+        perf = db.full_performance(user_id, with_meta=False)
         paces = perf.get("paces") or {}
         slim = {k: paces.get(k) for k in (
             "easy", "easy_range", "marathon", "threshold", "interval", "rep",
@@ -245,13 +244,15 @@ def _messages(user_id: int, question: str,
 def _openai_client():
     from openai import OpenAI
 
-    return OpenAI(api_key=config.OPENAI_API_KEY)
+    return OpenAI(api_key=config.OPENAI_API_KEY, timeout=config.COACH_TIMEOUT_SECONDS,
+                  max_retries=1)
 
 
 def _anthropic_client():
     import anthropic
 
-    return anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    return anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY,
+                               timeout=config.COACH_TIMEOUT_SECONDS, max_retries=1)
 
 
 def _complete(user_id: int, question: str,

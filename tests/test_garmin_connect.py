@@ -28,6 +28,7 @@ class FakeClient:
         self.block_activities = False
         self.fail_activities_after: int | None = None
         self.activity_calls = 0
+        self.rate_limited = False
 
     def dumps(self):
         return json.dumps({"di_token": self.di_token})
@@ -42,6 +43,8 @@ class FakeClient:
         self.calls.append(query)
         if self.expired:
             raise FakeError("API Error 401 - Unauthorized")
+        if self.rate_limited:
+            raise FakeError("API Error 429 - Too Many Requests")
         if path == ep.PROFILE:
             return PROFILE
         if path.startswith("/activitylist-service"):
@@ -167,7 +170,10 @@ def test_sync_fetches_stores_and_walks_history(tmp_path, monkeypatch):
     assert status["days"] >= 1
     assert status["garmin"]["last_error"] is None
     assert status["garmin"]["last_result"]["failures"] > 0  # hrv 404s are tolerated
-    assert status["garmin"]["history_done"] is True
+    # The first run only walks part of the history; later runs finish it.
+    assert status["garmin"]["history_done"] is False
+    garmin_connect.sync(user["id"], history_rounds=60)
+    assert client.get("/api/garmin").json()["history_done"] is True
 
 
 def test_expired_session_asks_for_login(tmp_path, monkeypatch):
@@ -215,6 +221,92 @@ def test_outbox_workouts_are_written_to_garmin(tmp_path, monkeypatch):
     methods = [(m, p) for m, p, _ in FakeGarmin.shared.sent]
     assert methods[0][1].endswith("/workout")
     assert "/schedule/555" in methods[1][1]
+
+
+def test_rate_limit_backs_off_instead_of_retrying_on_every_poll(tmp_path, monkeypatch):
+    client, user, kicked = _client(tmp_path, monkeypatch)
+    client.post("/api/garmin/connect", json={"email": "me@garmin.test", "password": "pw"})
+    garmin_connect.sync(user["id"])
+    with open_store(config.DB_PATH) as handle:
+        handle.update_garmin_account(user["id"], last_sync=0,
+                                     last_result={"attempted_at": 0})
+    FakeGarmin.shared.rate_limited = True
+    try:
+        garmin_connect.sync(user["id"])
+    except garmin_connect.GarminError:
+        pass
+    kicked.clear()
+    client.get("/api/status")
+    assert kicked == []
+    assert garmin_connect.due_users() == []
+    later = garmin_connect.time.time() + garmin_connect.ERROR_BACKOFF_SECONDS + 1
+    assert garmin_connect.due_users(later) == [user["id"]]
+
+
+def test_kick_respects_the_global_sync_slots(monkeypatch):
+    import threading
+
+    gate = threading.Event()
+    started: list[int] = []
+
+    def fake_sync(user_id, history_rounds):
+        started.append(user_id)
+        gate.wait(5)
+
+    monkeypatch.setattr(garmin_connect, "_safe_sync", fake_sync)
+    monkeypatch.setattr(garmin_connect, "_slots", threading.BoundedSemaphore(2))
+    monkeypatch.setattr(garmin_connect, "_running", set())
+    assert garmin_connect.kick(1) and garmin_connect.kick(2)
+    assert garmin_connect.kick(3) is False
+    gate.set()
+    for _ in range(100):
+        if garmin_connect._slots.acquire(blocking=False):
+            garmin_connect._slots.release()
+            break
+        garmin_connect.time.sleep(0.01)
+    assert sorted(started) == [1, 2]
+
+
+def test_deleting_the_account_mid_sync_leaves_nothing_behind(tmp_path, monkeypatch):
+    client, user, _ = _client(tmp_path, monkeypatch)
+    client.post("/api/garmin/connect", json={"email": "me@garmin.test", "password": "pw"})
+    original = garmin_connect.Session.get
+    calls = {"n": 0}
+
+    def get_then_delete(self, path):
+        calls["n"] += 1
+        if calls["n"] == 30:
+            with open_store(config.DB_PATH) as handle:
+                handle.delete_user(user["id"])
+        return original(self, path)
+
+    monkeypatch.setattr(garmin_connect.Session, "get", get_then_delete)
+    try:
+        garmin_connect.sync(user["id"])
+    except garmin_connect.GarminError:
+        pass
+    with open_store(config.DB_PATH) as handle:
+        for table in ("days", "activities", "garmin_meta", "garmin_accounts"):
+            count = handle.conn.execute(
+                f"SELECT COUNT(*) c FROM {table} WHERE user_id = ?",
+                (user["id"],)).fetchone()["c"]
+            assert count == 0, table
+
+
+def test_garmin_export_import_parses_off_the_event_loop(tmp_path, monkeypatch):
+    import io
+    import zipfile
+
+    client, _user, _ = _client(tmp_path, monkeypatch)
+    assert client.post("/api/import/garmin-export", content=b"nope").status_code == 400
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("DI_CONNECT/DI-Connect-Wellness/1_sleepData.json", json.dumps([{
+            "calendarDate": TODAY, "deepSleepSeconds": 3600, "lightSleepSeconds": 14400,
+            "remSleepSeconds": 5400, "awakeSleepSeconds": 600}]))
+    response = client.post("/api/import/garmin-export", content=buf.getvalue())
+    assert response.status_code == 200, response.text
+    assert response.json()["report"]["files_read"] == 1
 
 
 def _easy(name, minutes):
