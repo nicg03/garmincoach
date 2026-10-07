@@ -217,6 +217,61 @@ def test_outbox_workouts_are_written_to_garmin(tmp_path, monkeypatch):
     assert "/schedule/555" in methods[1][1]
 
 
+def _easy(name, minutes):
+    return {"name": name, "sport": "running", "kind": "easy",
+            "steps": [{"kind": "step", "intensity": "active",
+                       "duration": {"type": "time", "value": minutes, "unit": "min"},
+                       "target": {"type": "hr_zone", "zone": 2}}]}
+
+
+def test_replacing_a_plan_session_updates_the_same_garmin_workout(tmp_path, monkeypatch):
+    client, user, _ = _client(tmp_path, monkeypatch)
+    client.post("/api/garmin/connect", json={"email": "me@garmin.test", "password": "pw"})
+    day = (date.today() + timedelta(days=2)).isoformat()
+    sid = client.post("/api/workout/schedule", json={
+        "date": day, "workout": _easy("Plan easy", 40)}).json()["session"]["id"]
+    garmin_connect.sync(user["id"])
+    with open_store(config.DB_PATH) as handle:
+        planned = handle.session(user["id"], sid)
+        planned.pop("custom")  # as if the planner had written it
+        handle.upsert_session(user["id"], planned["plan_id"], planned)
+        handle.commit()
+    FakeGarmin.shared.sent.clear()
+
+    response = client.post("/api/workout/schedule", json={
+        "date": day, "session_id": sid, "workout": _easy("My run", 55)})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["replaced"] is True
+    session = body["session"]
+    assert session["id"] == sid and session["custom"] is True
+    assert session["workout"]["name"] == "My run"
+    assert session["plan_workout"]["name"] == "Plan easy"
+    assert session["state"] == "queued"
+    garmin_connect.sync(user["id"])
+    assert [(m, p) for m, p, _ in FakeGarmin.shared.sent] == [
+        ("PUT", "/workout-service/workout/555")]
+    plan = client.get("/api/plan").json()["plan"]
+    assert [s["id"] for s in plan["sessions"]] == [sid]
+
+    FakeGarmin.shared.sent.clear()
+    restored = client.post(f"/api/plan/session/{sid}/restore").json()["session"]
+    assert restored["workout"]["name"] == "Plan easy"
+    assert "plan_workout" not in restored and "custom" not in restored
+    garmin_connect.sync(user["id"])
+    assert [m for m, _, _ in FakeGarmin.shared.sent] == ["PUT"]
+
+    FakeGarmin.shared.sent.clear()
+    client.post(f"/api/plan/{plan['id']}/patch", json={"op": "rest", "id": sid})
+    garmin_connect.sync(user["id"])
+    assert [(m, p) for m, p, _ in FakeGarmin.shared.sent] == [
+        ("DELETE", "/workout-service/schedule/777")]
+    with open_store(config.DB_PATH) as handle:
+        rested = handle.session(user["id"], sid)
+    assert rested["garmin_schedule_id"] is None and rested["state"] == "pushed"
+    assert client.post(f"/api/plan/session/{sid}/restore").status_code == 400
+
+
 def test_due_users_follow_the_sync_interval(tmp_path, monkeypatch):
     client, user, _ = _client(tmp_path, monkeypatch)
     client.post("/api/garmin/connect", json={"email": "me@garmin.test", "password": "pw"})

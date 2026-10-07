@@ -23,7 +23,7 @@ function dow() {
 
 export async function render(root, ctx = {}) {
   const athleteId = ctx.athleteId || null;
-  const opts = { athleteId, readOnly: Boolean(ctx.readOnly), key: athleteId || '' };
+  const opts = { athleteId, readOnly: Boolean(ctx.readOnly), key: athleteId || '', path: ctx.path || [] };
   const wanted = (ctx.path || [])[0];
   const items = tabs();
   const sub = items.some(([key]) => key === wanted) ? wanted : 'calendar';
@@ -39,6 +39,12 @@ export async function render(root, ctx = {}) {
 function mondayOf(iso) {
   const d = new Date(iso + 'T00:00:00');
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addDays(iso, n) {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -132,7 +138,7 @@ function paceInsights(body) {
     <div class="insight-list">${bars}</div>${recHtml}</div>`;
 }
 
-function weekCalendar(plan) {
+function weekCalendar(plan, readOnly) {
   const sessions = plan.sessions || [];
   const meta = {};
   (plan.weeks || []).forEach((w) => { meta[w.start] = w; });
@@ -149,6 +155,11 @@ function weekCalendar(plan) {
     list.forEach((s) => { byDow[(new Date(s.date + 'T00:00:00').getDay() + 6) % 7] = s; });
     const cells = dow().map((label, i) => {
       const s = byDow[i];
+      const day = addDays(key, i);
+      if (!s && !readOnly && day >= today) {
+        return `<a class="day-cell empty add" href="#/training/workouts/${day}">
+          <span class="dow">${label} ${day.slice(8)}</span><span class="nm">${esc(t('train.addHere'))}</span></a>`;
+      }
       if (!s) return `<div class="day-cell empty"><span class="dow">${label}</span><span class="nm">—</span></div>`;
       const wo = s.workout || {};
       const km = s.distance_km != null ? `${fmt(s.distance_km, 1)} km` : '';
@@ -158,7 +169,8 @@ function weekCalendar(plan) {
         <span class="dow">${label} ${s.date.slice(8)}</span>
         <span class="nm">${esc(sessionTitle(s))}</span>
         <span class="meta">${esc([km, pace].filter(Boolean).join(' · '))}</span>
-        ${s.assigned_by ? `<span class="badge">${esc(t('train.coachBadge'))}</span>` : ''}
+        ${s.assigned_by ? `<span class="badge">${esc(t('train.coachBadge'))}</span>`
+          : (s.custom ? `<span class="badge">${esc(t('train.customBadge'))}</span>` : '')}
         ${s.state === 'skipped' ? `<span class="badge warn">${esc(t('train.skipped'))}</span>` : ''}
       </button>`;
     }).join('');
@@ -201,6 +213,8 @@ function sessionSheet(session, readOnly) {
   return `<div class="card-head"><h2>${esc(sessionTitle(session))}</h2>
       <span class="muted">${esc(longDate(session.date))}</span></div>
     ${session.assigned_by ? `<span class="badge">${esc(t('train.fromTheCoach'))}</span>` : ''}
+    ${session.plan_workout ? `<p class="muted">${esc(t('train.replacedFrom', {
+      name: showText(session.plan_workout.name) || showText(session.plan_workout.kind) || '' }))}</p>` : ''}
     <p class="muted">${esc(showText(session.purpose || wo.purpose || ''))}</p>
     <p>${esc(showText(session.description || wo.description || ''))}</p>
     ${done}
@@ -209,10 +223,15 @@ function sessionSheet(session, readOnly) {
       <tbody>${stepRows(wo.steps).join('') || `<tr><td colspan="3">${esc(t('train.noStructure'))}</td></tr>`}</tbody>
     </table></div>
     ${readOnly ? '' : `<div class="row-actions">
+      ${session.state !== 'completed' && session.kind !== 'race'
+        ? `<button type="button" class="primary inline" data-replace>${esc(t('train.replaceOwn'))}</button>` : ''}
+      ${session.plan_workout && session.state !== 'completed'
+        ? `<button type="button" class="ghost" data-restore>${esc(t('train.restorePlan'))}</button>` : ''}
       <button type="button" class="ghost" data-op="ease">${esc(t('train.makeEasy'))}</button>
       <button type="button" class="ghost" data-op="rest">${esc(t('train.turnRest'))}</button>
       <button type="button" class="ghost" data-op="skip">${esc(t('train.skip'))}</button>
-    </div>`}`;
+    </div>
+    <div data-replace-host></div>`}`;
 }
 
 function drawProjected(canvas, series) {
@@ -288,7 +307,7 @@ async function calendar(host, opts) {
     ${readOnly ? '' : paceInsights(insightsBody)}
     <div class="card">
       <div class="card-head"><h2>${esc(t('train.weeksTitle'))}</h2><span class="muted">${esc(t('train.tapDay'))}</span></div>
-      <div data-weeks>${weekCalendar(plan)}</div>
+      <div data-weeks>${weekCalendar(plan, readOnly)}</div>
     </div>
     <div class="card session-sheet hidden" data-sheet></div>
     ${(plan.projected || []).length ? `<div class="card"><div class="card-head"><h2>${esc(t('train.projected'))} ${info('projected')}</h2></div>
@@ -309,9 +328,34 @@ async function calendar(host, opts) {
       $$('[data-op]', sheet).forEach((op) => op.addEventListener('click', () => busy(op, '…', async () => {
         await post(`/api/plan/${plan.id}/patch`, { op: op.dataset.op, id: session.id });
         invalidate('plan', 'decide');
+        if (g.connected && !g.needs_login) post('/api/garmin/sync', {}).catch(() => {});
         toast(t('train.sessionUpdated'));
         rerender();
       })));
+      const replace = $('[data-replace]', sheet);
+      if (replace) {
+        replace.addEventListener('click', () => {
+          const target = $('[data-replace-host]', sheet);
+          mountBuilder(target, {
+            session,
+            title: t('train.replaceTitle'),
+            intro: t('train.replaceIntro'),
+            onDone: () => rerender(),
+          });
+          replace.disabled = true;
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+      const restore = $('[data-restore]', sheet);
+      if (restore) {
+        restore.addEventListener('click', () => busy(restore, '…', async () => {
+          await post(`/api/plan/session/${session.id}/restore`);
+          invalidate('plan', 'decide');
+          if (g.connected && !g.needs_login) post('/api/garmin/sync', {}).catch(() => {});
+          toast(t('train.restored'));
+          rerender();
+        }));
+      }
     });
   });
 
@@ -468,7 +512,9 @@ function workouts(host, opts) {
     });
     return;
   }
+  const wanted = opts.path[1];
   mountBuilder(host, {
     intro: t('train.workoutIntro'),
+    date: /^\d{4}-\d{2}-\d{2}$/.test(wanted || '') ? wanted : '',
   });
 }

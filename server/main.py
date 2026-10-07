@@ -726,7 +726,7 @@ def preview_workout(payload: dict[str, Any] = Body(...),
 @app.post("/api/workout/schedule")
 def schedule_one(payload: dict[str, Any] = Body(...),
                  user: dict = Depends(security.current_user)):
-    """Queue a one-off workout on a date (no full plan required)."""
+    """Queue a one-off workout on a date, or put it in place of `session_id`."""
     from garmin_sync.workout_dsl import validate
     try:
         workout = validate(payload.get("workout") or payload)
@@ -736,8 +736,23 @@ def schedule_one(payload: dict[str, Any] = Body(...),
     athlete_id = payload.get("athlete_id")
     uid = _subject_id(user, int(athlete_id) if athlete_id is not None else None)
     assigned_by = user["id"] if athlete_id is not None else None
+    if payload.get("session_id"):
+        try:
+            session = planning.replace_session(
+                uid, str(payload["session_id"]), workout, assigned_by=assigned_by)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, 400)
+        return {"session": session, "replaced": True}
     session = planning.schedule_workout(uid, workout, day, assigned_by=assigned_by)
     return {"session": session}
+
+
+@app.post("/api/plan/session/{session_id}/restore")
+def restore_session(session_id: str, user: dict = Depends(security.current_user)):
+    try:
+        return {"session": planning.restore_session(user["id"], session_id)}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, 400)
 
 
 @app.get("/api/day/decide")

@@ -1,11 +1,12 @@
-/* Structured workout editor, shared by the athlete's Workouts tab and the
-   coach's "Assign a workout". The steps live in a model and the inputs write
-   into it, so nested repeats round-trip without re-reading the DOM. */
-import { api, post } from '../core/api.js';
+/* Structured workout editor, shared by the athlete's Workouts tab, the plan
+   calendar's "Replace" and the coach's "Assign a workout". The steps live in
+   a model and the inputs write into it, so nested repeats round-trip without
+   re-reading the DOM. */
+import { api, post, scoped } from '../core/api.js';
 import { showText } from '../core/copy.js';
 import { t } from '../core/i18n.js';
-import { invalidate, state } from '../core/state.js';
-import { $, $$, busy, esc, todayIso, toast } from '../core/ui.js';
+import { cached, invalidate, state } from '../core/state.js';
+import { $, $$, busy, confirmDialog, esc, longDate, todayIso, toast } from '../core/ui.js';
 
 const INTENSITIES = ['warmup', 'active', 'interval', 'recovery', 'cooldown', 'rest'];
 const UNITS = [
@@ -96,12 +97,23 @@ function applyField(s, field, value) {
 /**
  * Mount the builder into `host`.
  * `athleteId` schedules onto that athlete's plan (coach use); `library`
- * shows the saved and built-in templates.
+ * shows the saved and built-in templates. `session` edits a copy of that
+ * planned session and saves it in its place; `date` presets the day.
  */
-export function mountBuilder(host, { athleteId = null, library = true, title = '', intro = '' } = {}) {
-  const model = { name: '', sport: 'running', kind: 'easy', steps: [step()] };
+export function mountBuilder(host, {
+  athleteId = null, library = true, title = '', intro = '', session = null, date = '', onDone = null,
+} = {}) {
+  const base = session && session.workout && session.workout.kind !== 'rest' ? session.workout : null;
+  const model = {
+    name: '', sport: 'running', kind: 'easy',
+    steps: base && (base.steps || []).length ? JSON.parse(JSON.stringify(base.steps)) : [step()],
+  };
   const heading = title || t('wo.title');
   const lead = intro || t('wo.intro');
+  const kindOptions = kinds();
+  if (base && base.kind && !kindOptions.some(([key]) => key === base.kind)) {
+    kindOptions.push([base.kind, showText(base.kind) || base.kind]);
+  }
 
   host.innerHTML = `
     <div class="card">
@@ -114,7 +126,7 @@ export function mountBuilder(host, { athleteId = null, library = true, title = '
           <option value="swimming">${esc(t('wo.swim'))}</option><option value="strength">${esc(t('wo.strength'))}</option>
         </select>
         <select data-meta="kind" aria-label="${esc(t('wo.kind'))}">
-          ${kinds().map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join('')}
+          ${kindOptions.map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join('')}
         </select>
       </div>
       <div data-steps></div>
@@ -123,10 +135,12 @@ export function mountBuilder(host, { athleteId = null, library = true, title = '
         <button class="ghost" type="button" data-add="repeat">${esc(t('wo.addRepeat'))}</button>
       </div>
       <div class="composer wrap" style="margin-top:12px">
-        <input type="date" data-date aria-label="${esc(t('wo.date'))}" value="${todayIso()}">
+        <input type="date" data-date aria-label="${esc(t('wo.date'))}" value="${esc(session ? session.date : (date || todayIso()))}"
+          ${session ? 'disabled' : ''}>
         <button class="ghost" type="button" data-preview>${esc(t('wo.preview'))}</button>
         ${library && !athleteId ? `<button class="ghost" type="button" data-save>${esc(t('wo.save'))}</button>` : ''}
-        <button class="primary" type="button" data-schedule>${esc(athleteId ? t('wo.scheduleAthlete') : t('wo.schedule'))}</button>
+        <button class="primary" type="button" data-schedule>${esc(session ? t('wo.replace')
+          : (athleteId ? t('wo.scheduleAthlete') : t('wo.schedule')))}</button>
       </div>
       <pre class="cmd-out" data-out></pre>
     </div>
@@ -136,6 +150,11 @@ export function mountBuilder(host, { athleteId = null, library = true, title = '
 
   const stepsHost = $('[data-steps]', host);
   const out = $('[data-out]', host);
+  if (base) {
+    $('[data-meta="name"]', host).value = showText(base.name) || '';
+    $('[data-meta="sport"]', host).value = base.sport || 'running';
+    $('[data-meta="kind"]', host).value = base.kind || 'easy';
+  }
 
   const render = () => {
     stepsHost.innerHTML = model.steps.map((s, i) => stepEditor(s, String(i))).join('')
@@ -179,19 +198,50 @@ export function mountBuilder(host, { athleteId = null, library = true, title = '
     out.textContent = (body.description ? body.description + '\n\n' : '') + JSON.stringify(body.workout, null, 2);
   }));
 
+  /* The plan session already on `day`, if a new workout there should take its place. */
+  async function plannedOn(day) {
+    const body = await cached(`plan:${athleteId || ''}`, () => api(scoped('/api/plan', athleteId)))
+      .catch(() => ({}));
+    return ((body.plan && body.plan.sessions) || []).find((s) => s.date === day
+      && !['completed', 'skipped'].includes(s.state) && s.kind !== 'race') || null;
+  }
+
   $('[data-schedule]', host).addEventListener('click', (event) => busy(event.currentTarget, t('wo.scheduling'), async () => {
     const payload = { ...read(), date: $('[data-date]', host).value };
     if (athleteId) payload.athlete_id = athleteId;
+    if (session) {
+      payload.session_id = session.id;
+    } else {
+      const existing = await plannedOn(payload.date);
+      if (existing && existing.kind === 'rest') {
+        payload.session_id = existing.id;
+      } else if (existing) {
+        const name = showText((existing.workout || {}).name) || showText(existing.kind) || existing.kind;
+        const choice = await confirmDialog({
+          title: t('wo.replaceTitle'),
+          body: esc(t('wo.replaceBody', { name, day: longDate(payload.date) })),
+          confirm: t('wo.replace'),
+          alternative: t('wo.addAnyway'),
+        });
+        if (!choice) return;
+        if (choice === true) payload.session_id = existing.id;
+      }
+    }
     const body = await post('/api/workout/schedule', payload);
     const day = body.session && body.session.date;
     out.textContent = '';
     invalidate('plan', 'decide');
-    if (!athleteId && state.status.garmin && state.status.garmin.connected) {
-      post('/api/garmin/sync', {}).catch(() => {});
+    const live = !athleteId && state.status.garmin && state.status.garmin.connected;
+    if (live) post('/api/garmin/sync', {}).catch(() => {});
+    if (body.replaced) {
+      const queued = body.session.state === 'queued';
+      toast(t(live && queued ? 'wo.replacedNow' : 'wo.replaced', { day: longDate(day) }));
+    } else if (live) {
       toast(t('wo.scheduledNow', { day }));
     } else {
       toast(athleteId ? t('wo.queuedCoach', { day }) : t('wo.queued', { day }));
     }
+    if (onDone) onDone(body);
   }));
 
   const save = $('[data-save]', host);

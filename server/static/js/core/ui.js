@@ -101,8 +101,9 @@ export function toast(message, tone = '') {
 }
 
 // ---- confirm dialog -----------------------------------------------------------
-/** Resolves true when confirmed. `requireText` makes the user type a value first. */
-export function confirmDialog({ title, body = '', confirm, danger = false, requireText = '' }) {
+/** Resolves true when confirmed. `requireText` makes the user type a value first.
+    With `alternative`, a third button resolves 'alt'. */
+export function confirmDialog({ title, body = '', confirm, danger = false, requireText = '', alternative = '' }) {
   return new Promise((resolve) => {
     const back = document.createElement('div');
     back.className = 'modal-back';
@@ -112,6 +113,7 @@ export function confirmDialog({ title, body = '', confirm, danger = false, requi
       ${requireText ? `<input type="text" data-confirm-input placeholder="${esc(requireText)}" autocomplete="off">` : ''}
       <div class="row-actions">
         <button type="button" class="ghost" data-cancel>${esc(t('ui.cancel'))}</button>
+        ${alternative ? `<button type="button" class="ghost" data-alt>${esc(alternative)}</button>` : ''}
         <button type="button" class="${danger ? 'ghost danger-button' : 'primary inline'}" data-ok
           ${requireText ? 'disabled' : ''}>${esc(confirm || t('ui.confirm'))}</button>
       </div>
@@ -127,6 +129,8 @@ export function confirmDialog({ title, body = '', confirm, danger = false, requi
     document.addEventListener('keydown', onKey);
     back.addEventListener('click', (event) => { if (event.target === back) close(false); });
     $('[data-cancel]', back).addEventListener('click', () => close(false));
+    const alt = $('[data-alt]', back);
+    if (alt) alt.addEventListener('click', () => close('alt'));
     const ok = $('[data-ok]', back);
     ok.addEventListener('click', () => close(true));
     const input = $('[data-confirm-input]', back);

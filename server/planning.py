@@ -108,6 +108,22 @@ def list_plans(user_id: int) -> list[dict]:
         return handle.list_plans(user_id)
 
 
+def _requeue(session: dict, plan: dict) -> None:
+    """Send a changed session back through the outbox if it belongs on the watch."""
+    if plan.get("status") != "active" or session.get("state") in ("completed", "skipped"):
+        return
+    day = session.get("date") or ""
+    if day < _today():
+        return
+    if (session.get("kind") or "") == "rest":
+        if session.get("garmin_schedule_id"):
+            session["state"] = "queued"
+        return
+    horizon = (date.today() + timedelta(days=14)).isoformat()
+    if session.get("state") in ("queued", "pushed") or day <= horizon:
+        session["state"] = "queued"
+
+
 def patch_plan(user_id: int, plan_id: str, op: dict) -> dict:
     with db.store() as handle:
         plan = handle.get_plan(user_id, plan_id)
@@ -118,9 +134,79 @@ def patch_plan(user_id: int, plan_id: str, op: dict) -> dict:
     updated["status"] = plan.get("status") or "draft"
     updated["created"] = plan.get("created")
     updated["race_id"] = plan.get("race_id")
+    if op.get("op") in ("ease", "rest", "replace"):
+        for session in updated.get("sessions") or []:
+            if session["id"] == op.get("id"):
+                _requeue(session, updated)
     with db.store() as handle:
         handle.save_plan(user_id, updated)
     return handle_get_plan(user_id, plan_id)
+
+
+def _session_and_plan(handle, user_id: int, session_id: str) -> tuple[dict, dict]:
+    session = handle.session(user_id, session_id)
+    if not session:
+        raise ValueError("Unknown session.")
+    plan = handle.get_plan(user_id, session.get("plan_id") or "")
+    if not plan:
+        raise ValueError("Session is not attached to a plan.")
+    return session, plan
+
+
+def _put_workout(session: dict, workout: dict) -> dict:
+    return planner.apply_patch(
+        {"sessions": [session]},
+        {"op": "replace", "id": session["id"], "workout": workout})["sessions"][0]
+
+
+def replace_session(user_id: int, session_id: str, workout: dict,
+                    assigned_by: int | None = None) -> dict:
+    """Put the athlete's own workout in place of a planned session.
+
+    The session keeps its id and Garmin ids, so the watch gets the same
+    workout updated in place rather than a second one on that day.
+    """
+    with db.store() as handle:
+        session, plan = _session_and_plan(handle, user_id, session_id)
+        if session.get("state") == "completed":
+            raise ValueError("This session is already done.")
+        if (session.get("kind") or "") == "race":
+            raise ValueError("Race day can't be replaced.")
+        original = session.get("workout")
+        session = _put_workout(session, workout)
+        if not session.get("custom") and original:
+            session["plan_workout"] = original
+        session["custom"] = True
+        if assigned_by:
+            session["assigned_by"] = assigned_by
+        else:
+            session.pop("assigned_by", None)
+        if session.get("state") == "skipped":
+            session["state"] = "planned"
+        session["revision"] = int(session.get("revision") or 1) + 1
+        _requeue(session, plan)
+        handle.upsert_session(user_id, plan["id"], session)
+        handle.commit()
+    return session
+
+
+def restore_session(user_id: int, session_id: str) -> dict:
+    """Bring back the workout the plan had before it was replaced."""
+    with db.store() as handle:
+        session, plan = _session_and_plan(handle, user_id, session_id)
+        original = session.get("plan_workout")
+        if not original:
+            raise ValueError("This session has no planned workout to restore.")
+        if session.get("state") == "completed":
+            raise ValueError("This session is already done.")
+        session = _put_workout(session, original)
+        for key in ("plan_workout", "custom", "assigned_by"):
+            session.pop(key, None)
+        session["revision"] = int(session.get("revision") or 1) + 1
+        _requeue(session, plan)
+        handle.upsert_session(user_id, plan["id"], session)
+        handle.commit()
+    return session
 
 
 def update_session(user_id: int, session_id: str, changes: dict) -> dict:
@@ -191,6 +277,11 @@ def outbox_ops(user_id: int) -> list[dict]:
     for session in queued:
         workout = session.get("workout") or {}
         if (workout.get("kind") or session.get("kind")) == "rest":
+            if session.get("garmin_schedule_id"):
+                unschedule = garmin_workout.unschedule_op(session["garmin_schedule_id"])
+                unschedule["session_id"] = session["id"]
+                unschedule["ref"] = "unschedule"
+                ops.append(unschedule)
             continue
         try:
             validate(workout)
@@ -245,6 +336,11 @@ def ack_ops(user_id: int, results: list[dict]) -> dict:
             if item.get("garmin_schedule_id"):
                 session["garmin_schedule_id"] = int(item["garmin_schedule_id"])
             if session.get("garmin_workout_id") and session.get("garmin_schedule_id"):
+                session["state"] = "pushed"
+                session.pop("last_error", None)
+            # A rest day only ever gets an unschedule op, and it carries no ids back.
+            if (session.get("kind") or "") == "rest" and not item.get("error"):
+                session["garmin_schedule_id"] = None
                 session["state"] = "pushed"
                 session.pop("last_error", None)
             plan_id = session.get("plan_id")
@@ -430,13 +526,14 @@ def apply_decision(user_id: int, action: str | None = None) -> dict:
             return decision
         patch_plan(user_id, plan["id"], op)
 
-    with db.store() as handle:
-        session = handle.session(user_id, session_id)
-        if session and plan.get("status") == "active":
-            session["state"] = "queued"
-            session["garmin_schedule_id"] = None
-            handle.upsert_session(user_id, plan["id"], session)
-            handle.commit()
+    if chosen == "swap":
+        with db.store() as handle:
+            session = handle.session(user_id, session_id)
+            if session and plan.get("status") == "active":
+                session["state"] = "queued"
+                session["garmin_schedule_id"] = None
+                handle.upsert_session(user_id, plan["id"], session)
+                handle.commit()
     decision["applied"] = chosen
     with db.store() as handle:
         handle.save_decision(user_id, _today(), decision)
@@ -491,6 +588,7 @@ def schedule_workout(user_id: int, workout: dict, day: str,
         "state": "queued",
         "revision": 1,
         "plan_id": "adhoc",
+        "custom": True,
     }
     if assigned_by:
         session["assigned_by"] = assigned_by
