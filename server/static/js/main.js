@@ -2,6 +2,7 @@
    picks a view for the hash. Views live in ./views and render into a fresh
    frame, so a slow answer for a page you already left lands nowhere. */
 import { closePanel, isLinkRoute, openLink, showForgot } from './components/account-links.js';
+import { openFeedback } from './components/feedback.js';
 import { api, onUnauthorized, post } from './core/api.js';
 import { getLocale, initLocale, onLocale, setLocale, t, translatePhrase } from './core/i18n.js';
 import { navigate, path, rerender, start } from './core/router.js';
@@ -74,7 +75,8 @@ function renderNav() {
   $('#nav').innerHTML = sections().map(navLink).join('');
   $('#bottombar').innerHTML = bottomSections().map(navLink).join('');
   const user = state.status.user || {};
-  $('#sidebar-foot').textContent = user.email || '';
+  $('#sidebar-foot').innerHTML = `<span>${esc(user.email || '')}</span>
+    <button type="button" class="link feedback-link" data-feedback>${esc(t('feedback.betaLink'))}</button>`;
   $('#user-button').textContent = (user.email || '?').slice(0, 1).toUpperCase();
   $('#user-who').innerHTML = `<strong>${esc(user.email || '')}</strong><br>` +
     `<span class="muted">${user.role === 'coach' ? esc(t('nav.coachAccount')) : esc(t('nav.athleteAccount'))}</span>`;
@@ -324,6 +326,13 @@ document.addEventListener('click', (event) => {
 });
 $('#user-list').addEventListener('click', (event) => {
   if (event.target.closest('a')) toggleMenu(false);
+});
+$('#btn-feedback').addEventListener('click', () => {
+  toggleMenu(false);
+  openFeedback();
+});
+$('#sidebar-foot').addEventListener('click', (event) => {
+  if (event.target.closest('[data-feedback]')) openFeedback();
 });
 $('#btn-logout').addEventListener('click', () => {
   toggleMenu(false);

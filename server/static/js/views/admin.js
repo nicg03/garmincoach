@@ -1,5 +1,6 @@
-/* Admin area: every registered account, for the emails listed in ADMIN_EMAILS.
-   Search and the role filter work on the list already loaded. */
+/* Admin area: every registered account and the beta feedback, for the emails
+   listed in ADMIN_EMAILS. Search and the role filter work on the list already
+   loaded. */
 import { api } from '../core/api.js';
 import { dateLocale, t } from '../core/i18n.js';
 import { $, emptyState, esc, tile, todayIso } from '../core/ui.js';
@@ -28,12 +29,42 @@ function row(user) {
   </tr>`;
 }
 
+function when(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString(dateLocale(), {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function feedbackRow(item) {
+  return `<tr>
+    <td class="left" style="white-space:nowrap">${esc(when(item.created))}</td>
+    <td class="left">${esc(item.email || '—')}</td>
+    <td class="left muted" title="${esc(item.user_agent || '')}">${esc(item.page || '—')}</td>
+    <td class="left" style="white-space:pre-wrap;min-width:260px">${esc(item.text)}</td>
+  </tr>`;
+}
+
+function feedbackCard(feedback) {
+  return `<div class="card">
+    <div class="card-head">
+      <h2>${esc(t('admin.feedback'))} <span class="muted">${feedback.length}</span></h2>
+    </div>
+    ${feedback.length ? `<div class="scroll"><table>
+      <thead><tr><th class="left">${esc(t('admin.when'))}</th><th class="left">${esc(t('admin.from'))}</th>
+        <th class="left">${esc(t('admin.page'))}</th><th class="left">${esc(t('admin.message'))}</th></tr></thead>
+      <tbody>${feedback.map(feedbackRow).join('')}</tbody></table></div>`
+      : emptyState(esc(t('admin.feedbackEmpty')))}
+  </div>`;
+}
+
 export async function render(root) {
-  const { users = [] } = await api('/api/admin/users');
+  const [{ users = [] }, { feedback = [] }] = await Promise.all([
+    api('/api/admin/users'), api('/api/admin/feedback')]);
   const coaches = users.filter((u) => u.role === 'coach').length;
   const weekAgo = daysAgo(7);
   const recent = users.filter((u) => (u.created || '') >= weekAgo).length;
   const verified = users.filter((u) => u.email_verified).length;
+  const recentFeedback = feedback.filter((f) => (f.created || '') >= weekAgo).length;
 
   root.innerHTML = `
     <div class="cards">
@@ -42,6 +73,7 @@ export async function render(root) {
       ${tile(esc(t('admin.coaches')), coaches, '')}
       ${tile(esc(t('admin.newWeek')), recent, '')}
       ${tile(esc(t('admin.verified')), verified, '')}
+      ${tile(esc(t('admin.feedbackWeek')), recentFeedback, '')}
     </div>
     <div class="card">
       <div class="card-head">
@@ -60,7 +92,8 @@ export async function render(root) {
         <tbody data-rows></tbody></table></div>
         <div data-none class="hidden">${emptyState(esc(t('admin.noMatch')))}</div>`
         : emptyState(esc(t('admin.empty')))}
-    </div>`;
+    </div>
+    ${feedbackCard(feedback)}`;
 
   const body = $('[data-rows]', root);
   if (!body) return;

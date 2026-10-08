@@ -21,7 +21,7 @@ import sqlite3
 import threading
 import time
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 # How long a Mac has to finish linking after it starts a pairing.
@@ -180,6 +180,16 @@ CREATE TABLE IF NOT EXISTS email_tokens (
     used        INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS email_tokens_user ON email_tokens(user_id, purpose);
+CREATE TABLE IF NOT EXISTS feedback (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    text        TEXT NOT NULL,
+    page        TEXT,
+    user_agent  TEXT,
+    lang        TEXT,
+    created     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS feedback_user ON feedback(user_id, created);
 """
 
 # How long a link in an email stays valid.
@@ -334,7 +344,7 @@ class Store:
         for table in ("activities", "days", "garmin_meta", "briefings",
                       "coach_usage", "pairings", "athlete", "races", "plans",
                       "plan_sessions", "workout_templates", "decisions",
-                      "garmin_accounts", "email_tokens"):
+                      "garmin_accounts", "email_tokens", "feedback"):
             self.conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         self.conn.execute(
             "DELETE FROM coaching_links WHERE athlete_id = ? OR coach_id = ?",
@@ -627,6 +637,31 @@ class Store:
             (user_id, day))
         self.commit()
         return self.coach_calls(user_id, day)
+
+    # ---- beta feedback -----------------------------------------------------
+    def add_feedback(self, user_id: int, text: str, page: str = "",
+                     user_agent: str = "", lang: str = "") -> dict:
+        created = datetime.now().isoformat(timespec="seconds")
+        cursor = self.conn.execute(
+            "INSERT INTO feedback (user_id, text, page, user_agent, lang, created) "
+            "VALUES (?,?,?,?,?,?)", (user_id, text, page, user_agent, lang, created))
+        self.commit()
+        return {"id": cursor.lastrowid, "user_id": user_id, "text": text,
+                "page": page, "user_agent": user_agent, "lang": lang,
+                "created": created}
+
+    def feedback_count_today(self, user_id: int) -> int:
+        return self.conn.execute(
+            "SELECT COUNT(*) c FROM feedback WHERE user_id = ? AND created >= ?",
+            (user_id, date.today().isoformat())).fetchone()["c"]
+
+    def list_feedback(self) -> list[dict]:
+        """Every message, newest first, with the sender's current email."""
+        rows = self.conn.execute(
+            "SELECT f.id, f.text, f.page, f.user_agent, f.lang, f.created, "
+            "u.email FROM feedback f LEFT JOIN users u ON u.id = f.user_id "
+            "ORDER BY f.id DESC")
+        return [dict(r) for r in rows]
 
     # ---- athlete / races / plans -------------------------------------------
     def get_athlete(self, user_id: int) -> dict:

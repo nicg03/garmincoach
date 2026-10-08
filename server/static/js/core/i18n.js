@@ -11,6 +11,7 @@ const PHRASES = {
   'Several recovery markers are off. Take the day.': 'reason.off',
   'Quality today would pile on. Swap in an easy run.': 'reason.quality',
   'Keep moving, but keep it easy.': 'reason.easy',
+  "That's plenty for today, thank you. Try again tomorrow.": 'feedback.limit',
   today: 'time.today',
   yesterday: 'time.yesterday',
 };

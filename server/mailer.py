@@ -81,6 +81,12 @@ def confirm_new_email(to: str, link: str) -> bool:
                 "your old address stays in place." + SIGNATURE)
 
 
+def feedback_received(to: str, sender: str, text: str, page: str) -> bool:
+    return send(to, f"Beta feedback from {sender}",
+                f"{sender} wrote{f' on {page}' if page else ''}:\n\n{text}"
+                + SIGNATURE)
+
+
 def account_changed(to: str, what: str) -> bool:
     return send(to, f"Your gepard.fit {what} was changed",
                 f"The {what} of your gepard.fit account was just changed, and "

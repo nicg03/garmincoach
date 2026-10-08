@@ -33,7 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from garmin_sync import metrics
 
 from . import (accounts, backup, coach, coaching, config, db, garmin_connect,
-               garmin_export, garmin_fetch, ingest, security)
+               garmin_export, garmin_fetch, ingest, mailer, security)
 from .store import EmailTaken
 
 STATIC_DIR = config.ROOT / "server" / "static"
@@ -272,6 +272,44 @@ def admin_users(_admin: dict = Depends(security.admin_user)):
     for user in users:
         user["email_verified"] = bool(user["email_verified"])
     return {"users": users}
+
+
+FEEDBACK_MAX_CHARS = 2000
+FEEDBACK_DAILY_LIMIT = 10
+
+
+def _notify_feedback(sender: str, text: str, page: str) -> None:
+    for admin in sorted(config.ADMIN_EMAILS):
+        mailer.feedback_received(admin, sender, text, page)
+
+
+@app.post("/api/feedback")
+def send_feedback(background: BackgroundTasks,
+                  text: str = Body("", embed=True),
+                  page: str = Body("", embed=True),
+                  user_agent: str = Body("", embed=True),
+                  lang: str = Body("", embed=True),
+                  user: dict = Depends(security.current_user)):
+    text = (text or "").strip()
+    if not text:
+        return JSONResponse({"error": "Write something first."}, 400)
+    if len(text) > FEEDBACK_MAX_CHARS:
+        return JSONResponse(
+            {"error": f"Keep it under {FEEDBACK_MAX_CHARS} characters."}, 400)
+    with db.store() as handle:
+        if handle.feedback_count_today(user["id"]) >= FEEDBACK_DAILY_LIMIT:
+            return JSONResponse(
+                {"error": "That's plenty for today, thank you. Try again tomorrow."}, 429)
+        handle.add_feedback(user["id"], text, (page or "")[:200],
+                            (user_agent or "")[:300], (lang or "")[:10])
+    background.add_task(_notify_feedback, user["email"], text, (page or "")[:200])
+    return {"ok": True}
+
+
+@app.get("/api/admin/feedback")
+def admin_feedback(_admin: dict = Depends(security.admin_user)):
+    with db.store() as handle:
+        return {"feedback": handle.list_feedback()}
 
 
 @app.post("/api/token/rotate")
