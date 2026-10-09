@@ -430,7 +430,7 @@ function aiCoach(host, wantedId) {
     ask(question.value);
   });
   question.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
       ask(question.value);
     }

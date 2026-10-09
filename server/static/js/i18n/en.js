@@ -592,7 +592,7 @@ export const en = {
   'coach.refresh': 'Refresh',
   'coach.askTitle': 'Ask the coach',
   'coach.askHelp': 'It reads your recent load, recovery, plan and races before answering.',
-  'coach.placeholder': 'Ask anything about your training… (Ctrl/⌘+Enter to send)',
+  'coach.placeholder': 'Ask anything about your training… (Enter to send, Shift+Enter for a new line)',
   'coach.question': 'Your question',
   'coach.ask': 'Ask',
   'coach.reading': 'Reading your last few weeks…',

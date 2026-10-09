@@ -592,7 +592,7 @@ export const it = {
   'coach.refresh': 'Aggiorna',
   'coach.askTitle': 'Chiedi al coach',
   'coach.askHelp': 'Legge carico recente, recupero, piano e gare prima di rispondere.',
-  'coach.placeholder': 'Chiedi qualcosa sul tuo allenamento… (Ctrl/⌘+Invio per inviare)',
+  'coach.placeholder': 'Chiedi qualcosa sul tuo allenamento… (Invio per inviare, Maiusc+Invio per andare a capo)',
   'coach.question': 'La tua domanda',
   'coach.ask': 'Chiedi',
   'coach.reading': 'Lettura delle ultime settimane…',
