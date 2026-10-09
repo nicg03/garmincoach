@@ -210,6 +210,60 @@ def test_cookies_without_a_session_version_still_work(tmp_path, monkeypatch):
     assert client.get("/api/me").status_code == 200
 
 
+def test_mobile_session_uses_bearer_and_is_not_exposed_to_web(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    web, _ = _signup()
+    assert "session_token" not in web.post(
+        "/api/login", json={"email": "a@example.com", "password": PASSWORD}).json()
+
+    mobile_headers = {security.MOBILE_CLIENT_HEADER: security.MOBILE_CLIENT}
+    login = TestClient(app).post(
+        "/api/login", headers=mobile_headers,
+        json={"email": "a@example.com", "password": PASSWORD})
+    assert login.status_code == 200, login.text
+    token = login.json()["session_token"]
+
+    bearer = {**mobile_headers, "Authorization": f"Bearer {token}"}
+    assert TestClient(app).get("/api/me", headers=bearer).status_code == 200
+    # A mobile session is not accepted as a sync token or as an unlabelled
+    # browser credential.
+    assert TestClient(app).get(
+        "/api/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+    assert TestClient(app).get(
+        "/api/sync/state", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+
+
+def test_mobile_password_change_rotates_session_version(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    _signup()
+    client = TestClient(app)
+    marker = {security.MOBILE_CLIENT_HEADER: security.MOBILE_CLIENT}
+    old = client.post("/api/login", headers=marker, json={
+        "email": "a@example.com", "password": PASSWORD}).json()["session_token"]
+    old_headers = {**marker, "Authorization": f"Bearer {old}"}
+
+    changed = client.post("/api/password/change", headers=old_headers, json={
+        "current": PASSWORD, "password": "newpassword"})
+    assert changed.status_code == 200, changed.text
+    new = changed.json()["session_token"]
+    assert new != old
+    assert TestClient(app).get("/api/me", headers=old_headers).status_code == 401
+    assert TestClient(app).get(
+        "/api/me", headers={**marker, "Authorization": f"Bearer {new}"}).status_code == 200
+
+
+def test_mobile_cors_preflight_accepts_auth_headers(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    response = TestClient(app).options("/api/me", headers={
+        "Origin": "capacitor://localhost",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization,x-gepard-client",
+    })
+    assert response.status_code == 200
+    allowed = response.headers["access-control-allow-headers"].lower()
+    assert "authorization" in allowed and "x-gepard-client" in allowed
+
+
 def test_mailer_posts_to_resend(monkeypatch):
     monkeypatch.setattr(config, "ACCOUNT_EMAILS", True)
     monkeypatch.setattr(config, "RESEND_API_KEY", "re_test")
@@ -259,6 +313,27 @@ def test_no_redirect_without_an_explicit_public_url(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CANONICAL_URL", "")
     custom = TestClient(app, base_url="https://gepard.fit")
     assert custom.get("/", follow_redirects=False).status_code == 200
+
+
+def test_store_pages_and_app_link_associations(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "APPLE_TEAM_ID", "ABCDE12345")
+    monkeypatch.setattr(config, "ANDROID_APP_LINK_SHA256", ("AA:BB:CC",))
+    client = TestClient(app)
+
+    privacy = client.get("/privacy")
+    assert privacy.status_code == 200
+    assert "support@gepard.fit" in privacy.text
+    assert client.get("/support").status_code == 200
+
+    apple = client.get("/.well-known/apple-app-site-association")
+    assert apple.status_code == 200
+    assert apple.json()["applinks"]["details"][0]["appID"] == (
+        "ABCDE12345.fit.gepard.app")
+    android = client.get("/.well-known/assetlinks.json")
+    target = android.json()[0]["target"]
+    assert target["package_name"] == "fit.gepard.app"
+    assert target["sha256_cert_fingerprints"] == ["AA:BB:CC"]
 
 
 def test_account_delete_removes_tokens(tmp_path, monkeypatch):

@@ -63,6 +63,25 @@
 /* ---- shell -------------------------------------------------------------- */
 .shell { min-height: 100vh; }
 
+.native-offline {
+  display: none;
+  position: fixed;
+  z-index: 20;
+  inset: env(safe-area-inset-top) 12px auto;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bad);
+  color: #fff;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+.is-offline .native-offline { display: block; }
+.native-app .topbar {
+  padding-top: env(safe-area-inset-top);
+  height: calc(var(--topbar) + env(safe-area-inset-top));
+}
+
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;

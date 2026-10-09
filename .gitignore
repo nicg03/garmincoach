@@ -12,3 +12,14 @@ __pycache__/
 
 # Local Railway link
 .railway/
+
+# Capacitor build output and local signing material
+mobile/node_modules/
+mobile/www/
+mobile/ios/App/Pods/
+mobile/ios/DerivedData/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/build/
+mobile/*.jks
+mobile/*.keystore

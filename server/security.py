@@ -29,6 +29,8 @@ from fastapi import HTTPException, Request
 from . import config, db
 
 COOKIE_NAME = "garmin_session"
+MOBILE_CLIENT_HEADER = "x-gepard-client"
+MOBILE_CLIENT = "capacitor"
 
 # scrypt at these parameters costs ~16 MB and a few tens of milliseconds:
 # slow enough to make a stolen database unpleasant to crack, fast enough that
@@ -165,10 +167,34 @@ def clear_failures(request: Request, bucket: str = "auth") -> None:
 
 
 # ---- FastAPI dependencies ---------------------------------------------------
+def is_mobile_client(request: Request) -> bool:
+    """Whether this request came from the signed, bundled Capacitor client."""
+    return request.headers.get(MOBILE_CLIENT_HEADER, "").lower() == MOBILE_CLIENT
+
+
+def mobile_session(request: Request, user: dict) -> str | None:
+    """Return a portable session only to the mobile client.
+
+    It has the same signature, lifetime and session-version revocation as the
+    browser cookie, but can live in the OS keychain instead of a cookie jar.
+    """
+    if not is_mobile_client(request):
+        return None
+    return issue_session(user["id"], user.get("session_version", 0))
+
+
+def _request_session(request: Request) -> str | None:
+    cookie = request.cookies.get(COOKIE_NAME)
+    if cookie or not is_mobile_client(request):
+        return cookie
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    return token.strip() if scheme.lower() == "bearer" else None
+
+
 def current_user(request: Request) -> dict:
     """The signed-in account, or a 401. Every data route depends on this, and
     everything downstream is scoped to the id it returns."""
-    claims = session_claims(request.cookies.get(COOKIE_NAME))
+    claims = session_claims(_request_session(request))
     if claims is None:
         raise HTTPException(401, "Not signed in.")
     with db.store() as handle:

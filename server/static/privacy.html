@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111111">
+  <title>Privacy · gepard.fit</title>
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/components.css">
+  <style>
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif}
+    main{max-width:760px;margin:auto;padding:40px 20px 80px}a{color:var(--accent)}
+    h1{margin:28px 0 8px;letter-spacing:-.04em}h2{margin:30px 0 8px;font-size:19px}
+    p,li{line-height:1.6}.muted{color:var(--muted)}.brand{text-decoration:none;color:var(--ink);font-weight:600}
+    .brand span{color:var(--accent)}
+  </style>
+</head>
+<body><main>
+  <a class="brand" href="/">gepard<span>.fit</span></a>
+  <h1>Privacy policy</h1>
+  <p class="muted">Effective 9 October 2026</p>
+  <p>gepard.fit turns Garmin training data into readiness, plans and coaching.
+    This policy covers the website and the iOS and Android apps. For questions
+    or privacy requests, email <a href="mailto:support@gepard.fit">support@gepard.fit</a>.</p>
+
+  <h2>Data we process</h2>
+  <ul>
+    <li>Account details: email address, password hash, role and account settings.</li>
+    <li>Fitness and health data you import from Garmin, including activities,
+      heart rate, HRV, sleep, stress, readiness, body metrics and training load.</li>
+    <li>Plans, races, workouts, coach links, notes, feedback and AI-coach conversations.</li>
+    <li>Technical data needed for security and operation, such as IP address,
+      device/browser information, sign-in attempts and sync timestamps.</li>
+  </ul>
+
+  <h2>Garmin connection</h2>
+  <p>Your Garmin email, password and MFA code are used only to complete the
+    sign-in you request. They are not stored. The resulting Garmin access token
+    is encrypted at rest and can be revoked from Data sources. The direct
+    connection is unofficial and may stop working if Garmin changes its service.
+    You can instead import Garmin’s official export.</p>
+
+  <h2>How data is used and shared</h2>
+  <p>We use the data to provide sync, charts, readiness, plans, workout delivery,
+    account security and support. When AI coaching is enabled, compact training
+    summaries and your prompt are sent to the configured AI provider (OpenAI or
+    Anthropic); raw Garmin exports are not sent. Account email may be handled by
+    Resend. Hosting providers process encrypted-in-transit traffic and stored
+    data on our behalf. Garmin receives requests needed to sync your account and
+    workouts. We do not sell personal data or use health data for advertising.</p>
+
+  <h2>Storage, security and retention</h2>
+  <p>Traffic uses HTTPS. Passwords are scrypt-hashed, sessions are signed, and
+    Garmin tokens are encrypted. The mobile app keeps its session in the iOS
+    Keychain or Android Keystore-backed encrypted storage. Data remains while
+    your account exists and may remain briefly in rotating backups. Deleting
+    your account in Settings removes the live account, imported history, plans,
+    conversations and connections; backups expire according to the backup
+    schedule.</p>
+
+  <h2>Your choices and rights</h2>
+  <p>You can disconnect Garmin, rotate sync credentials, sign out other devices,
+    edit account details and delete the account inside the product. Depending on
+    where you live, you may also request access, correction, export, restriction
+    or deletion by contacting us. You may withdraw notification permission in
+    your device settings.</p>
+
+  <h2>Health notice and children</h2>
+  <p>Readiness and coaching are informational and are not medical advice,
+    diagnosis or treatment. The service is not directed to children under 16.</p>
+
+  <h2>Changes</h2>
+  <p>Material changes will be reflected here with a new effective date. Continued
+    use after an update means the new policy applies.</p>
+  <p><a href="/support">Support</a> · <a href="/">Back to gepard.fit</a></p>
+</main></body>
+</html>

@@ -1,4 +1,5 @@
 /* The other ways in: the browser extension and Garmin's export zip. */
+import { request } from '../core/api.js';
 import { t } from '../core/i18n.js';
 import { refreshStatus } from '../core/state.js';
 import { $, esc, toast } from '../core/ui.js';
@@ -34,9 +35,8 @@ async function importExport(file, status, onDone) {
   }
   status.textContent = t('import.reading', { name });
   try {
-    const response = await fetch('/api/import/garmin-export', {
+    const response = await request('/api/import/garmin-export', {
       method: 'POST',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/zip' },
       body: file,
     });

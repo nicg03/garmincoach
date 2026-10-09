@@ -102,6 +102,15 @@ CANONICAL_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
 SYNC_REPO_URL = os.environ.get(
     "SYNC_REPO_URL", "https://github.com/nicg03/garmincoach")
 
+# Native app links. They can be filled after the Apple team and Android
+# release signing certificate exist; the well-known endpoints stay valid but
+# advertise no app until then.
+MOBILE_APP_ID = "fit.gepard.app"
+APPLE_TEAM_ID = os.environ.get("APPLE_TEAM_ID", "").strip()
+ANDROID_APP_LINK_SHA256 = tuple(
+    value.strip() for value in os.environ.get(
+        "ANDROID_APP_LINK_SHA256", "").split(",") if value.strip())
+
 
 def coach_provider() -> str | None:
     if OPENAI_API_KEY:

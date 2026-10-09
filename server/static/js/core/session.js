@@ -1,4 +1,5 @@
 /* Leave the signed-in app and return to the public landing page. */
+import { nativeBridge, request } from './api.js';
 
 export function finishSignOut() {
   // replaceState does not fire hashchange, so the router cannot send us to Today.
@@ -7,6 +8,7 @@ export function finishSignOut() {
 }
 
 export async function signOut() {
-  await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+  await request('/api/logout', { method: 'POST' }).catch(() => {});
+  await nativeBridge()?.clearToken();
   finishSignOut();
 }

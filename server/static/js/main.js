@@ -3,7 +3,7 @@
    frame, so a slow answer for a page you already left lands nowhere. */
 import { closePanel, isLinkRoute, openLink, showForgot } from './components/account-links.js';
 import { openFeedback } from './components/feedback.js';
-import { api, onUnauthorized, post } from './core/api.js';
+import { api, onUnauthorized, post, publicApi } from './core/api.js';
 import { getLocale, initLocale, onLocale, setLocale, t, translatePhrase } from './core/i18n.js';
 import { navigate, path, rerender, start } from './core/router.js';
 import { signOut } from './core/session.js';
@@ -293,18 +293,15 @@ $('#gate-form').addEventListener('submit', async (event) => {
   }
   $('#gate-submit').disabled = true;
   try {
-    const response = await fetch(mode === 'signup' ? '/api/signup' : '/api/login', {
+    await publicApi(mode === 'signup' ? '/api/signup' : '/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      error.textContent = body.error || body.detail || t('gate.failed');
-      return;
-    }
     $('#password').value = '';
     await boot();
+  } catch (problem) {
+    error.textContent = problem.message || t('gate.failed');
   } finally {
     $('#gate-submit').disabled = false;
   }
@@ -355,7 +352,7 @@ document.addEventListener('click', (event) => {
 let started = false;
 
 async function boot() {
-  state.site = await fetch('/api/config').then((r) => r.json()).catch(() => ({}));
+  state.site = await publicApi('/api/config').catch(() => ({}));
   setMode(mode);
   // Links from emails work whether or not this browser is signed in.
   if (isLinkRoute(path())) {

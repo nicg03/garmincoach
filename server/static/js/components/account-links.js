@@ -2,6 +2,7 @@
    the forgot-password form. They work signed in or not, so they render in
    the gate's second card rather than inside the shell. */
 import { t } from '../core/i18n.js';
+import { publicApi } from '../core/api.js';
 import { state } from '../core/state.js';
 import { $, esc, toast } from '../core/ui.js';
 
@@ -13,14 +14,11 @@ export function isLinkRoute(segments) {
 
 // Not the shared api(): a 401 here must not bounce to the sign-in form.
 async function send(url, body) {
-  const response = await fetch(url, {
+  return publicApi(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || data.detail || t('account.wentWrong'));
-  return data;
 }
 
 function showPanel(html) {

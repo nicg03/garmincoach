@@ -2,7 +2,7 @@
    from, and the account itself. */
 import { renderGarmin } from '../components/garmin-connect.js';
 import { bindDropzone, dropzoneHtml, extensionHtml } from '../components/importers.js';
-import { api, post, put } from '../core/api.js';
+import { api, isNative, nativeBridge, post, put } from '../core/api.js';
 import { getLocale, t, translatePhrase } from '../core/i18n.js';
 import { finishSignOut, signOut } from '../core/session.js';
 import { rerender } from '../core/router.js';
@@ -93,7 +93,8 @@ async function sources(host) {
   const user = status.user || {};
   const repo = status.repo || state.site.repo || '';
   const last = status.last_ingest;
-  const command = `python -m garmin_sync link --url ${location.origin}`;
+  const native = isNative();
+  const command = `python -m garmin_sync link --url ${nativeBridge()?.apiBase || location.origin}`;
   const none = esc(t('settings.noneYet'));
   host.innerHTML = `
     <div class="card">
@@ -115,18 +116,20 @@ async function sources(host) {
     </div>
 
     <h2 class="section-title">${esc(t('settings.otherImport'))}</h2>
-    <div class="grid-2">
+    <div class="${native ? '' : 'grid-2'}">
+      ${native ? '' : `
       <div class="card">
         <div class="card-head"><h2>${esc(t('settings.extension'))}</h2></div>
         <p class="muted">${esc(t('settings.extensionHelp'))}</p>
         ${extensionHtml('settings')}
-      </div>
+      </div>`}
       <div class="card">
         <div class="card-head"><h2>${esc(t('settings.exportZip'))}</h2></div>
         ${dropzoneHtml()}
       </div>
     </div>
 
+    ${native ? '' : `
     <details class="card advanced">
       <summary>${esc(t('settings.advanced'))}</summary>
       <p class="muted">${esc(t('settings.advancedHelp'))}
@@ -137,12 +140,13 @@ async function sources(host) {
       <div class="token-row"><code class="token" id="sync-token">${esc(user.sync_token || '')}</code>
         <button type="button" class="ghost" data-copy="sync-token">${esc(t('ui.copy'))}</button>
         <button type="button" class="ghost" data-rotate>${esc(t('settings.newToken'))}</button></div>
-    </details>`;
+    </details>`}`;
 
   renderGarmin($('[data-garmin]', host), { onChange: rerender });
   bindDropzone(host, rerender);
-  bindCopy(host);
-  $('[data-rotate]', host).addEventListener('click', async (event) => {
+  if (!native) bindCopy(host);
+  const rotate = $('[data-rotate]', host);
+  if (rotate) rotate.addEventListener('click', async (event) => {
     const ok = await confirmDialog({
       title: t('settings.rotateTitle'),
       body: t('settings.rotateBody'),
@@ -186,6 +190,7 @@ function account(host) {
         ${emails ? `<button type="button" class="ghost" data-revoke>${esc(t('settings.signOutOthers'))}</button>` : ''}
       </div>
     </div>
+    ${reminderCard()}
     ${emails ? `
     <div class="grid-2">
       <form class="card" data-password novalidate>
@@ -214,6 +219,7 @@ function account(host) {
       <button type="button" class="ghost danger-button" data-delete>${esc(t('settings.deleteBtn'))}</button>
     </div>`;
 
+  bindReminder(host);
   $('[data-logout]', host).addEventListener('click', () => signOut());
   const resend = $('[data-verify]', host);
   if (resend) {
@@ -284,5 +290,48 @@ function account(host) {
       toast(error.message, 'bad');
       refreshStatus().catch(() => {});
     }
+  });
+}
+
+function reminderCard() {
+  if (!isNative()) return '';
+  return `<form class="card" data-reminder>
+    <div class="card-head"><h2>${esc(t('settings.dailyReminder'))}</h2></div>
+    <p class="muted">${esc(t('settings.dailyReminderHelp'))}</p>
+    <label class="role-option">
+      <input type="checkbox" name="enabled">
+      <span>${esc(t('settings.reminderEnabled'))}</span>
+    </label>
+    <label class="field" style="max-width:180px;margin-top:12px">
+      <span>${esc(t('settings.reminderTime'))}</span>
+      <input type="time" name="time" value="07:30">
+    </label>
+    <div class="row-actions"><button class="primary inline" type="submit">${esc(t('settings.saveReminder'))}</button></div>
+  </form>`;
+}
+
+async function bindReminder(host) {
+  const form = $('[data-reminder]', host);
+  const bridge = nativeBridge();
+  if (!form || !bridge) return;
+  const saved = await bridge.getReminder();
+  form.enabled.checked = saved.enabled;
+  form.time.value = `${String(saved.hour).padStart(2, '0')}:${String(saved.minute).padStart(2, '0')}`;
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    busy($('button[type="submit"]', form), t('settings.saving'), async () => {
+      const [hour, minute] = form.time.value.split(':').map(Number);
+      const accepted = await bridge.setReminder({
+        enabled: form.enabled.checked,
+        hour: Number.isFinite(hour) ? hour : 7,
+        minute: Number.isFinite(minute) ? minute : 30,
+      });
+      if (!accepted) {
+        form.enabled.checked = false;
+        toast(t('settings.reminderDenied'), 'bad');
+        return;
+      }
+      toast(t('settings.reminderSaved'));
+    });
   });
 }

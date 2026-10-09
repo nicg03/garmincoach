@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">gepard.fit</string>
+    <string name="title_activity_main">gepard.fit</string>
+    <string name="package_name">fit.gepard.app</string>
+    <string name="custom_url_scheme">fit.gepard.app</string>
+</resources>

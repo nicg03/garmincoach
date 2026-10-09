@@ -1,7 +1,7 @@
 /* Coaching: the AI coach (briefing, saved conversations and memory) and, for
    athletes, the human coach they're linked to. Conversations live on the
    server, so they survive reloads and other devices. */
-import { api, del, patch, post } from '../core/api.js';
+import { api, del, patch, post, request } from '../core/api.js';
 import { info } from '../core/glossary.js';
 import { getLocale, t, translatePhrase } from '../core/i18n.js';
 import { navigate, rerender } from '../core/router.js';
@@ -357,10 +357,9 @@ function aiCoach(host, wantedId) {
     askButton.disabled = true;
     let answer = '';
     try {
-      const response = await fetch('/api/chat', {
+      const response = await request('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
         body: JSON.stringify({
           question: text,
           chat_id: current ? current.id : null,

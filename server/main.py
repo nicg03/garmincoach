@@ -111,7 +111,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Gepard-Client"],
 )
 
 @app.middleware("http")
@@ -173,6 +173,15 @@ def _public_user(user: dict) -> dict:
     }
 
 
+def _auth_body(request: Request, user: dict, **values) -> dict:
+    """Account response plus a keychain session for the bundled mobile app."""
+    body = {**values, "user": _public_user(user)}
+    token = security.mobile_session(request, user)
+    if token:
+        body["session_token"] = token
+    return body
+
+
 def _subject_id(user: dict, athlete_id: int | None) -> int:
     """Own data, or an accepted athlete's data when the caller is their coach."""
     if athlete_id is None:
@@ -185,6 +194,48 @@ def _subject_id(user: dict, athlete_id: int | None) -> int:
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/privacy", include_in_schema=False)
+def privacy_page():
+    return FileResponse(STATIC_DIR / "privacy.html")
+
+
+@app.get("/support", include_in_schema=False)
+def support_page():
+    return FileResponse(STATIC_DIR / "support.html")
+
+
+@app.get("/.well-known/apple-app-site-association", include_in_schema=False)
+def apple_app_site_association():
+    details = []
+    if config.APPLE_TEAM_ID:
+        details.append({
+            "appID": f"{config.APPLE_TEAM_ID}.{config.MOBILE_APP_ID}",
+            # Account emails use the root path plus a hash route. Do not claim
+            # /privacy, /support or /pair, which should stay in the browser.
+            "components": [{"/": "/", "comment": "gepard.fit account links"}],
+        })
+    return JSONResponse(
+        {"applinks": {"apps": [], "details": details}},
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+def android_asset_links():
+    associations = []
+    if config.ANDROID_APP_LINK_SHA256:
+        associations.append({
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": config.MOBILE_APP_ID,
+                "sha256_cert_fingerprints": list(config.ANDROID_APP_LINK_SHA256),
+            },
+        })
+    return JSONResponse(
+        associations, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/api/config")
@@ -234,7 +285,7 @@ def signup(request: Request, response: Response, background: BackgroundTasks,
     if config.ACCOUNT_EMAILS:
         background.add_task(accounts.send_verification, accounts.base_url(request),
                             user["id"])
-    return {"ok": True, "user": _public_user(user)}
+    return _auth_body(request, user, ok=True)
 
 
 @app.post("/api/login")
@@ -252,7 +303,7 @@ def login(request: Request, response: Response,
 
     security.clear_failures(request)
     security.sign_in(request, response, user)
-    return {"ok": True, "user": _public_user(user)}
+    return _auth_body(request, user, ok=True)
 
 
 @app.post("/api/logout")
@@ -382,7 +433,7 @@ def password_reset(request: Request, response: Response,
     security.clear_failures(request)
     security.sign_in(request, response, user)
     background.add_task(accounts.notify_change, user["email"], "password")
-    return {"ok": True, "user": _public_user(user)}
+    return _auth_body(request, user, ok=True)
 
 
 @app.post("/api/password/change")
@@ -406,7 +457,7 @@ def password_change(request: Request, response: Response,
     # Every other device is signed out; this one gets a fresh cookie.
     security.sign_in(request, response, user)
     background.add_task(accounts.notify_change, user["email"], "password")
-    return {"ok": True}
+    return _auth_body(request, user, ok=True)
 
 
 @app.post("/api/email/change")
@@ -456,7 +507,7 @@ def email_change_confirm(request: Request, response: Response,
         user = handle.user_by_id(old["id"])
     security.sign_in(request, response, user)
     background.add_task(accounts.notify_change, old["email"], "email address")
-    return {"ok": True, "user": _public_user(user)}
+    return _auth_body(request, user, ok=True)
 
 
 @app.post("/api/sessions/revoke")
@@ -467,7 +518,7 @@ def sessions_revoke(request: Request, response: Response,
         handle.bump_session_version(user["id"])
         user = handle.user_by_id(user["id"])
     security.sign_in(request, response, user)
-    return {"ok": True}
+    return _auth_body(request, user, ok=True)
 
 
 # ---- Mac ↔ site linking -----------------------------------------------------
