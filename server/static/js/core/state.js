@@ -7,8 +7,7 @@ export const state = {
   site: {},
   status: {},
   range: '90',
-  chat: [],
-  history: [],
+  chatId: null,
 };
 
 const cache = new Map();

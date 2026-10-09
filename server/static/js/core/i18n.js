@@ -12,6 +12,8 @@ const PHRASES = {
   'Quality today would pile on. Swap in an easy run.': 'reason.quality',
   'Keep moving, but keep it easy.': 'reason.easy',
   "That's plenty for today, thank you. Try again tomorrow.": 'feedback.limit',
+  "The coach's memory is full. Delete a fact first.": 'coach.memoryFull',
+  'Write something to remember.': 'coach.memoryBlank',
   today: 'time.today',
   yesterday: 'time.yesterday',
 };

@@ -40,6 +40,7 @@ export const GLOSSARY = {
   adherence: { group: 'training' },
   goal: { group: 'training' },
   coaching_ai: { group: 'coaching' },
+  coaching_memory: { group: 'coaching' },
   coaching_human: { group: 'coaching' },
 };
 

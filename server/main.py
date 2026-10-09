@@ -34,6 +34,7 @@ from garmin_sync import metrics
 
 from . import (accounts, backup, coach, coaching, config, db, garmin_connect,
                garmin_export, garmin_fetch, ingest, mailer, security)
+from . import store as store_mod
 from .store import EmailTaken
 
 STATIC_DIR = config.ROOT / "server" / "static"
@@ -922,18 +923,127 @@ def brief(refresh: int = 0, lang: str = "en",
 def chat(payload: dict[str, Any] = Body(...),
          user: dict = Depends(security.current_user)):
     _check_coach(user)
-    question = (payload.get("question") or "").strip()
+    question = (payload.get("question") or "").strip()[:2000]
     if not question:
         raise HTTPException(400, "Ask something.")
-    history = payload.get("history")
     lang = coach.normalize_lang(payload.get("lang"))
+    chat_id = payload.get("chat_id")
+    if chat_id:
+        current = db.get_chat(user["id"], _int_id(chat_id))
+        if not current:
+            raise HTTPException(404, "No such conversation.")
+        history = db.chat_messages(user["id"], current["id"],
+                                   last=coach.MAX_HISTORY_TURNS)
+    else:
+        current = db.create_chat(user["id"], question, lang,
+                                 bool(payload.get("use_memory")))
+        history = []
+    db.add_chat_message(user["id"], current["id"], "user", question)
     db.record_coach_call(user["id"])
     return StreamingResponse(
-        coach.stream(user["id"], question[:2000],
-                     history if isinstance(history, list) else None, lang=lang),
+        coach.stream(user["id"], current, question, history, lang=lang),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _int_id(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(404, "No such conversation.") from None
+
+
+@app.get("/api/chats")
+def chats_list(offset: int = 0, limit: int = 20,
+               user: dict = Depends(security.current_user)):
+    with db.store() as handle:
+        return handle.list_chats(user["id"], max(1, min(limit, 50)), max(0, offset))
+
+
+@app.delete("/api/chats")
+def chats_delete_all(user: dict = Depends(security.current_user)):
+    with db.store() as handle:
+        return {"deleted": handle.delete_all_chats(user["id"])}
+
+
+@app.get("/api/chats/{chat_id}")
+def chats_get(chat_id: int, user: dict = Depends(security.current_user)):
+    found = db.get_chat(user["id"], chat_id)
+    if not found:
+        raise HTTPException(404, "No such conversation.")
+    found.pop("summary", None)
+    found.pop("summary_upto", None)
+    return {"chat": found, "messages": db.chat_messages(user["id"], chat_id)}
+
+
+@app.patch("/api/chats/{chat_id}")
+def chats_update(chat_id: int, payload: dict[str, Any] = Body(...),
+                 user: dict = Depends(security.current_user)):
+    title = payload.get("title")
+    use_memory = payload.get("use_memory")
+    with db.store() as handle:
+        found = handle.update_chat(
+            user["id"], chat_id,
+            title=title if isinstance(title, str) else None,
+            use_memory=use_memory if isinstance(use_memory, bool) else None)
+    if not found:
+        raise HTTPException(404, "No such conversation.")
+    found.pop("summary", None)
+    found.pop("summary_upto", None)
+    return found
+
+
+@app.delete("/api/chats/{chat_id}")
+def chats_delete(chat_id: int, user: dict = Depends(security.current_user)):
+    with db.store() as handle:
+        if not handle.delete_chat(user["id"], chat_id):
+            raise HTTPException(404, "No such conversation.")
+    return {"ok": True}
+
+
+@app.get("/api/coach/memory")
+def memory_list(user: dict = Depends(security.current_user)):
+    return {"memories": db.memories(user["id"]), "limit": store_mod.MAX_MEMORIES,
+            "max_chars": store_mod.MAX_MEMORY_CHARS}
+
+
+@app.post("/api/coach/memory")
+def memory_add(payload: dict[str, Any] = Body(...),
+               user: dict = Depends(security.current_user)):
+    source = payload.get("chat_id")
+    if source is not None:
+        source = _int_id(source)
+        if not db.get_chat(user["id"], source):
+            source = None
+    try:
+        return db.add_memory(user["id"], str(payload.get("text") or ""), source)
+    except db.MemoryFull:
+        raise HTTPException(409, "The coach's memory is full. Delete a fact first.") from None
+    except ValueError:
+        raise HTTPException(400, "Write something to remember.") from None
+
+
+@app.patch("/api/coach/memory/{memory_id}")
+def memory_update(memory_id: int, payload: dict[str, Any] = Body(...),
+                  user: dict = Depends(security.current_user)):
+    try:
+        with db.store() as handle:
+            found = handle.update_memory(user["id"], memory_id,
+                                         str(payload.get("text") or ""))
+    except ValueError:
+        raise HTTPException(400, "Write something to remember.") from None
+    if not found:
+        raise HTTPException(404, "No such memory.")
+    return found
+
+
+@app.delete("/api/coach/memory/{memory_id}")
+def memory_delete(memory_id: int, user: dict = Depends(security.current_user)):
+    with db.store() as handle:
+        if not handle.delete_memory(user["id"], memory_id):
+            raise HTTPException(404, "No such memory.")
+    return {"ok": True}
 
 
 # ---- ingest -----------------------------------------------------------------

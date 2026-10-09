@@ -15,7 +15,8 @@ from datetime import date
 from typing import Any, Callable
 
 from . import config
-from .store import EmailTaken, Store, normalise_email, open_store  # noqa: F401
+from .store import (EmailTaken, MemoryFull, Store, normalise_email,  # noqa: F401
+                    open_store)
 
 SESSION_SECRET_KEY = "session_secret"
 GARMIN_TOKEN_KEY = "garmin_token_key"
@@ -200,3 +201,45 @@ def coach_calls_today(user_id: int) -> int:
 def record_coach_call(user_id: int) -> int:
     with store() as handle:
         return handle.record_coach_call(user_id, date.today().isoformat())
+
+
+def create_chat(user_id: int, title: str, lang: str = "en",
+                use_memory: bool = False) -> dict:
+    with store() as handle:
+        return handle.create_chat(user_id, title, lang, use_memory)
+
+
+def get_chat(user_id: int, chat_id: int) -> dict | None:
+    with store() as handle:
+        return handle.chat(user_id, chat_id)
+
+
+def chat_messages(user_id: int, chat_id: int, last: int | None = None) -> list[dict]:
+    with store() as handle:
+        return handle.chat_messages(user_id, chat_id, last)
+
+
+def add_chat_message(user_id: int, chat_id: int, role: str, content: str) -> dict:
+    with store() as handle:
+        return handle.add_chat_message(user_id, chat_id, role, content)
+
+
+def recent_chats(user_id: int, exclude: int | None, since: str,
+                 limit: int = 5) -> list[dict]:
+    with store() as handle:
+        return handle.recent_chats(user_id, exclude, since, limit)
+
+
+def set_chat_summary(user_id: int, chat_id: int, summary: str, upto: int) -> None:
+    with store() as handle:
+        handle.set_chat_summary(user_id, chat_id, summary, upto)
+
+
+def memories(user_id: int) -> list[dict]:
+    with store() as handle:
+        return handle.memories(user_id)
+
+
+def add_memory(user_id: int, text: str, source_chat_id: int | None = None) -> dict:
+    with store() as handle:
+        return handle.add_memory(user_id, text, source_chat_id)

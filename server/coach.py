@@ -17,6 +17,8 @@ history costs a few thousand tokens instead of tens of thousands.
 from __future__ import annotations
 
 import json
+import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 
 from garmin_sync import metrics
@@ -44,7 +46,24 @@ How to answer:
 - Markdown for structure, but no tables and no preamble.
 - If the data doesn't support a conclusion, say what you'd need.
 - You are not a doctor. Point them at one for anything medical, and don't \
-diagnose."""
+diagnose.
+
+Memory:
+- Facts the athlete asked you to remember are listed under "Things the \
+athlete asked you to remember". Take them into account; the athlete can \
+correct them.
+- Only if the athlete explicitly asks you to remember something ("remember \
+that...", "ricordati che..."), confirm briefly and end your answer with one \
+line on its own: `REMEMBER: <the fact, short, in the reply language>`. Never \
+write that line otherwise.
+- You only know earlier conversations listed under "Earlier conversations". \
+If the athlete refers to a past chat you can't see, say so and suggest \
+switching on the option to use previous conversations."""
+
+SUMMARY_PROMPT = """Summarize this conversation between an athlete and their \
+endurance coach in at most 80 words. Keep what's worth recalling later: \
+injuries, goals, preferences, the advice given and any decision taken. No \
+preamble, no markdown headings. {lang}"""
 
 BRIEFING_PROMPTS = {
     "en": """Write today's briefing. Three short parts, with a \
@@ -77,6 +96,10 @@ REPLY_LANG = {
 }
 
 MAX_HISTORY_TURNS = 8
+RECALL_CHATS = 5
+RECALL_DAYS = 90
+SUMMARY_MAX_TOKENS = 300
+REMEMBER_LINE = re.compile(r"^[ \t>*_`]*REMEMBER:[ \t]*(.+?)[ \t`*_]*$", re.MULTILINE)
 
 
 def normalize_lang(lang: str | None) -> str:
@@ -221,8 +244,61 @@ def _pacing_context(user_id: int, activities: list[dict]) -> str:
     return "\n".join(chunks)
 
 
-def _messages(user_id: int, question: str,
-              history: list[dict] | None = None) -> list[dict]:
+def _memory_block(user_id: int) -> str:
+    facts = db.memories(user_id)
+    if not facts:
+        return ""
+    return ("## Things the athlete asked you to remember\n"
+            + "\n".join(f"- ({m['created'][:10]}) {m['text']}" for m in facts))
+
+
+def _transcript(messages: list[dict]) -> str:
+    names = {"user": "Athlete", "assistant": "Coach"}
+    return "\n\n".join(f"{names.get(m['role'], m['role'])}: {m['content'][:1500]}"
+                       for m in messages[-20:])
+
+
+def summarize_chat(user_id: int, chat: dict) -> str | None:
+    """A short recap of one conversation, made the first time it's recalled
+    and redone only once the chat has grown. Not counted against the daily
+    limit: the athlete didn't ask a question."""
+    if chat.get("summary") and chat.get("summary_upto", 0) >= chat.get("n_messages", 0):
+        return chat["summary"]
+    messages = db.chat_messages(user_id, chat["id"])
+    if not messages:
+        return None
+    lang = normalize_lang(chat.get("lang"))
+    summary = _ask(SUMMARY_PROMPT.format(lang=REPLY_LANG[lang]),
+                   [{"role": "user", "content": _transcript(messages)}],
+                   SUMMARY_MAX_TOKENS).strip()
+    if summary:
+        db.set_chat_summary(user_id, chat["id"], summary, len(messages))
+    return summary or None
+
+
+def earlier_conversations(user_id: int, chat_id: int | None) -> str:
+    since = (date.today() - timedelta(days=RECALL_DAYS)).isoformat()
+    chats = db.recent_chats(user_id, chat_id, since, RECALL_CHATS)
+    if not chats:
+        return ""
+
+    def recap(chat):
+        try:
+            return summarize_chat(user_id, chat)
+        except Exception:  # noqa: BLE001 - a missing recap shouldn't sink the answer
+            return chat.get("summary")
+
+    with ThreadPoolExecutor(max_workers=len(chats)) as pool:
+        recaps = list(pool.map(recap, chats))
+    lines = [f"- {chat['updated'][:10]}, \"{chat['title']}\": {text}"
+             for chat, text in zip(chats, recaps) if text]
+    if not lines:
+        return ""
+    return "## Earlier conversations (newest first)\n" + "\n".join(lines)
+
+
+def _messages(user_id: int, question: str, history: list[dict] | None = None,
+              extra: str = "") -> list[dict]:
     """Prepend the data to the first user turn so the cache-friendly part of
     the prompt stays put across follow-ups."""
     turns = []
@@ -232,7 +308,7 @@ def _messages(user_id: int, question: str,
         if role in ("user", "assistant") and isinstance(content, str) and content:
             turns.append({"role": role, "content": content[:4000]})
 
-    context = build_context(user_id)
+    context = "\n\n".join(part for part in (build_context(user_id), extra) if part)
     if turns and turns[0]["role"] == "user":
         turns[0] = {"role": "user",
                     "content": f"Here is my data.\n\n{context}\n\n{turns[0]['content']}"}
@@ -255,29 +331,60 @@ def _anthropic_client():
                                timeout=config.COACH_TIMEOUT_SECONDS, max_retries=1)
 
 
-def _complete(user_id: int, question: str,
-              history: list[dict] | None = None, lang: str = "en") -> str:
+def _provider() -> str:
     provider = config.coach_provider()
     if provider is None:
         raise RuntimeError("The coach needs OPENAI_API_KEY or ANTHROPIC_API_KEY.")
-    lang = normalize_lang(lang)
-    system = _system(lang)
-    messages = _messages(user_id, question, history)
-    if provider == "openai":
+    return provider
+
+
+def _ask(system: str, messages: list[dict], max_tokens: int | None = None) -> str:
+    max_tokens = max_tokens or config.COACH_MAX_TOKENS
+    if _provider() == "openai":
         response = _openai_client().chat.completions.create(
             model=config.coach_model(),
-            max_tokens=config.COACH_MAX_TOKENS,
+            max_tokens=max_tokens,
             messages=[{"role": "system", "content": system}, *messages],
         )
         return (response.choices[0].message.content or "").strip()
     response = _anthropic_client().messages.create(
         model=config.coach_model(),
-        max_tokens=config.COACH_MAX_TOKENS,
+        max_tokens=max_tokens,
         system=system,
         messages=messages,
     )
     return "".join(block.text for block in response.content
                    if getattr(block, "type", "") == "text")
+
+
+def _ask_stream(system: str, messages: list[dict]):
+    """The answer as text fragments, whichever provider is configured."""
+    if _provider() == "openai":
+        response = _openai_client().chat.completions.create(
+            model=config.coach_model(),
+            max_tokens=config.COACH_MAX_TOKENS,
+            messages=[{"role": "system", "content": system}, *messages],
+            stream=True,
+        )
+        for chunk in response:
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                yield delta
+        return
+    with _anthropic_client().messages.stream(
+        model=config.coach_model(),
+        max_tokens=config.COACH_MAX_TOKENS,
+        system=system,
+        messages=messages,
+    ) as response:
+        yield from response.text_stream
+
+
+def _complete(user_id: int, question: str,
+              history: list[dict] | None = None, lang: str = "en") -> str:
+    lang = normalize_lang(lang)
+    return _ask(_system(lang),
+                _messages(user_id, question, history, extra=_memory_block(user_id)))
 
 
 def briefing(user_id: int, lang: str = "en") -> str:
@@ -299,36 +406,46 @@ def cached_briefing(user_id: int, refresh: bool = False, lang: str = "en") -> di
     return {"date": today, "text": text, "cached": False, "lang": lang}
 
 
-def stream(user_id: int, question: str, history: list[dict] | None = None,
-           lang: str = "en"):
-    """Server-sent events carrying the answer as it's written."""
+def split_remember(answer: str) -> tuple[str, list[str]]:
+    """The answer without its REMEMBER lines, and the facts they carried."""
+    facts = [m.group(1).strip() for m in REMEMBER_LINE.finditer(answer)]
+    clean = REMEMBER_LINE.sub("", answer).strip()
+    return clean, [f for f in facts if f][:3]
+
+
+def _event(payload: dict) -> str:
+    return "data: " + json.dumps(payload) + "\n\n"
+
+
+def stream(user_id: int, chat: dict, question: str,
+           history: list[dict] | None = None, lang: str = "en"):
+    """Server-sent events carrying the answer as it's written.
+
+    The question is already stored; the answer is stored once complete, so a
+    failed call leaves the question in the chat but no half-written reply.
+    """
+    yield _event({"chat": {"id": chat["id"], "title": chat["title"],
+                           "use_memory": chat["use_memory"]}})
     try:
-        provider = config.coach_provider()
-        if provider is None:
-            raise RuntimeError("The coach needs OPENAI_API_KEY or ANTHROPIC_API_KEY.")
         lang = normalize_lang(lang)
-        system = _system(lang)
-        messages = _messages(user_id, question, history)
-        if provider == "openai":
-            response = _openai_client().chat.completions.create(
-                model=config.coach_model(),
-                max_tokens=config.COACH_MAX_TOKENS,
-                messages=[{"role": "system", "content": system}, *messages],
-                stream=True,
-            )
-            for chunk in response:
-                delta = chunk.choices[0].delta.content if chunk.choices else None
-                if delta:
-                    yield "data: " + json.dumps({"delta": delta}) + "\n\n"
-        else:
-            with _anthropic_client().messages.stream(
-                model=config.coach_model(),
-                max_tokens=config.COACH_MAX_TOKENS,
-                system=system,
-                messages=messages,
-            ) as response:
-                for chunk in response.text_stream:
-                    yield "data: " + json.dumps({"delta": chunk}) + "\n\n"
-        yield "data: " + json.dumps({"done": True}) + "\n\n"
+        extra = [_memory_block(user_id)]
+        if chat.get("use_memory"):
+            extra.append(earlier_conversations(user_id, chat["id"]))
+        messages = _messages(user_id, question, history,
+                             extra="\n\n".join(part for part in extra if part))
+        answer = ""
+        for delta in _ask_stream(_system(lang), messages):
+            answer += delta
+            yield _event({"delta": delta})
+        clean, facts = split_remember(answer)
+        if clean:
+            db.add_chat_message(user_id, chat["id"], "assistant", clean)
+        for fact in facts:
+            try:
+                yield _event({"memory": db.add_memory(user_id, fact, chat["id"])})
+            except db.MemoryFull:
+                yield _event({"memory_full": True})
+                break
+        yield _event({"done": True, "text": clean})
     except Exception as e:  # noqa: BLE001 - the browser is the only place to report it
-        yield "data: " + json.dumps({"error": f"{type(e).__name__}: {e}"}) + "\n\n"
+        yield _event({"error": f"{type(e).__name__}: {e}"})

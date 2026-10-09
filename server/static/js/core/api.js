@@ -29,6 +29,7 @@ function send(method, path, body) {
 
 export const post = (path, body) => send('POST', path, body);
 export const put = (path, body) => send('PUT', path, body);
+export const patch = (path, body) => send('PATCH', path, body);
 export const del = (path) => api(path, { method: 'DELETE' });
 
 /** Adds `athlete_id` so a coach reads an athlete's data through the same routes. */

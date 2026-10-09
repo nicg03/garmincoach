@@ -7,7 +7,7 @@ import { api, onUnauthorized, post } from './core/api.js';
 import { getLocale, initLocale, onLocale, setLocale, t, translatePhrase } from './core/i18n.js';
 import { navigate, path, rerender, start } from './core/router.js';
 import { signOut } from './core/session.js';
-import { events, hasData, refreshStatus, role, state } from './core/state.js';
+import { events, hasData, invalidate, refreshStatus, role, state } from './core/state.js';
 import { $, $$, agoFromEpoch, busy, errorCard, esc, loadingPage, toast } from './core/ui.js';
 import { destroyCharts, initCharts } from './core/charts.js';
 import { installGlossary } from './core/glossary.js';
@@ -389,6 +389,8 @@ initLocale();
 paintLang();
 document.addEventListener('app:signed-out', () => {
   state.status = {};
+  state.chatId = null;
+  invalidate();
   toggleMenu(false);
   document.title = 'gepard.fit';
   showGate();

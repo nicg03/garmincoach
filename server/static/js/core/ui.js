@@ -144,6 +144,50 @@ export function confirmDialog({ title, body = '', confirm, danger = false, requi
   });
 }
 
+/** Resolves the trimmed text, or null when cancelled. */
+export function promptDialog({ title, body = '', value = '', confirm, maxLength = 300, multiline = false }) {
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    const field = multiline
+      ? `<textarea data-prompt-input rows="4" maxlength="${maxLength}"></textarea>`
+      : `<input type="text" data-prompt-input maxlength="${maxLength}" autocomplete="off">`;
+    back.innerHTML = `<form class="modal" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+      <h2 id="prompt-title">${esc(title)}</h2>
+      ${body ? `<p class="muted">${body}</p>` : ''}
+      ${field}
+      <div class="row-actions">
+        <button type="button" class="ghost" data-cancel>${esc(t('ui.cancel'))}</button>
+        <button type="submit" class="primary inline" data-ok>${esc(confirm || t('ui.confirm'))}</button>
+      </div>
+    </form>`;
+    const previous = document.activeElement;
+    const close = (result) => {
+      back.remove();
+      document.removeEventListener('keydown', onKey);
+      if (previous && previous.focus) previous.focus();
+      resolve(result);
+    };
+    const onKey = (event) => { if (event.key === 'Escape') close(null); };
+    document.addEventListener('keydown', onKey);
+    back.addEventListener('click', (event) => { if (event.target === back) close(null); });
+    $('[data-cancel]', back).addEventListener('click', () => close(null));
+    const input = $('[data-prompt-input]', back);
+    const ok = $('[data-ok]', back);
+    input.value = value.slice(0, maxLength);
+    const sync = () => { ok.disabled = !input.value.trim(); };
+    input.addEventListener('input', sync);
+    sync();
+    $('form', back).addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (input.value.trim()) close(input.value.trim());
+    });
+    document.body.appendChild(back);
+    input.focus();
+    input.select();
+  });
+}
+
 // ---- busy buttons -------------------------------------------------------------
 /** Disables a button while `work` runs and reports failures as a toast. */
 export async function busy(button, label, work) {

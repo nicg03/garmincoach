@@ -190,7 +190,41 @@ CREATE TABLE IF NOT EXISTS feedback (
     created     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS feedback_user ON feedback(user_id, created);
+CREATE TABLE IF NOT EXISTS coach_chats (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL,
+    title         TEXT NOT NULL,
+    lang          TEXT NOT NULL DEFAULT 'en',
+    use_memory    INTEGER NOT NULL DEFAULT 0,
+    summary       TEXT,
+    summary_upto  INTEGER NOT NULL DEFAULT 0,
+    created       TEXT NOT NULL,
+    updated       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS coach_chats_user ON coach_chats(user_id, updated);
+CREATE TABLE IF NOT EXISTS coach_messages (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id  INTEGER NOT NULL,
+    user_id  INTEGER NOT NULL,
+    role     TEXT NOT NULL,
+    content  TEXT NOT NULL,
+    created  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS coach_messages_chat ON coach_messages(chat_id, id);
+CREATE TABLE IF NOT EXISTS coach_memories (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL,
+    text            TEXT NOT NULL,
+    source_chat_id  INTEGER,
+    created         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS coach_memories_user ON coach_memories(user_id, id);
 """
+
+# The coach's explicit memory: few, short facts, all sent on every question.
+MAX_MEMORIES = 30
+MAX_MEMORY_CHARS = 300
+CHAT_TITLE_CHARS = 60
 
 # How long a link in an email stays valid.
 EMAIL_TOKEN_TTL = {"verify": 48 * 3600, "reset": 3600, "email_change": 24 * 3600}
@@ -202,6 +236,21 @@ NOTE_KINDS = frozenset({"comment", "suggestion"})
 
 class EmailTaken(Exception):
     """Signup hit the unique index on email."""
+
+
+class MemoryFull(Exception):
+    """The athlete already has MAX_MEMORIES facts saved."""
+
+
+def _now() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def chat_title(question: str) -> str:
+    title = " ".join((question or "").split())
+    if len(title) <= CHAT_TITLE_CHARS:
+        return title
+    return title[:CHAT_TITLE_CHARS - 1].rstrip() + "…"
 
 
 def new_token() -> str:
@@ -344,7 +393,8 @@ class Store:
         for table in ("activities", "days", "garmin_meta", "briefings",
                       "coach_usage", "pairings", "athlete", "races", "plans",
                       "plan_sessions", "workout_templates", "decisions",
-                      "garmin_accounts", "email_tokens", "feedback"):
+                      "garmin_accounts", "email_tokens", "feedback",
+                      "coach_chats", "coach_messages", "coach_memories"):
             self.conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         self.conn.execute(
             "DELETE FROM coaching_links WHERE athlete_id = ? OR coach_id = ?",
@@ -637,6 +687,168 @@ class Store:
             (user_id, day))
         self.commit()
         return self.coach_calls(user_id, day)
+
+    # ---- coach chats ----------------------------------------------------------
+    _CHAT_COLUMNS = (
+        "c.id, c.title, c.lang, c.use_memory, c.summary, c.summary_upto, "
+        "c.created, c.updated, "
+        "(SELECT COUNT(*) FROM coach_messages m WHERE m.chat_id = c.id) n_messages")
+
+    @staticmethod
+    def _chat_row(row) -> dict | None:
+        if not row:
+            return None
+        chat = dict(row)
+        chat["use_memory"] = bool(chat["use_memory"])
+        return chat
+
+    def create_chat(self, user_id: int, title: str, lang: str = "en",
+                    use_memory: bool = False) -> dict:
+        now = _now()
+        cursor = self.conn.execute(
+            "INSERT INTO coach_chats (user_id, title, lang, use_memory, created, "
+            "updated) VALUES (?,?,?,?,?,?)",
+            (user_id, chat_title(title) or "…", lang, int(bool(use_memory)), now, now))
+        self.commit()
+        return self.chat(user_id, cursor.lastrowid)
+
+    def chat(self, user_id: int, chat_id: int) -> dict | None:
+        row = self.conn.execute(
+            f"SELECT {self._CHAT_COLUMNS} FROM coach_chats c "
+            "WHERE c.user_id = ? AND c.id = ?", (user_id, chat_id)).fetchone()
+        return self._chat_row(row)
+
+    def list_chats(self, user_id: int, limit: int = 20, offset: int = 0) -> dict:
+        total = self.conn.execute(
+            "SELECT COUNT(*) c FROM coach_chats WHERE user_id = ?",
+            (user_id,)).fetchone()["c"]
+        rows = self.conn.execute(
+            f"SELECT {self._CHAT_COLUMNS} FROM coach_chats c WHERE c.user_id = ? "
+            "ORDER BY c.updated DESC, c.id DESC LIMIT ? OFFSET ?",
+            (user_id, limit, offset))
+        chats = []
+        for row in rows:
+            chat = self._chat_row(row)
+            chat.pop("summary", None)
+            chat.pop("summary_upto", None)
+            chats.append(chat)
+        return {"chats": chats, "total": total}
+
+    def update_chat(self, user_id: int, chat_id: int, title: str | None = None,
+                    use_memory: bool | None = None) -> dict | None:
+        if title is not None and chat_title(title):
+            self.conn.execute(
+                "UPDATE coach_chats SET title = ? WHERE user_id = ? AND id = ?",
+                (chat_title(title), user_id, chat_id))
+        if use_memory is not None:
+            self.conn.execute(
+                "UPDATE coach_chats SET use_memory = ? WHERE user_id = ? AND id = ?",
+                (int(bool(use_memory)), user_id, chat_id))
+        self.commit()
+        return self.chat(user_id, chat_id)
+
+    def delete_chat(self, user_id: int, chat_id: int) -> bool:
+        cursor = self.conn.execute(
+            "DELETE FROM coach_chats WHERE user_id = ? AND id = ?", (user_id, chat_id))
+        self.conn.execute(
+            "DELETE FROM coach_messages WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id))
+        self.commit()
+        return cursor.rowcount == 1
+
+    def delete_all_chats(self, user_id: int) -> int:
+        cursor = self.conn.execute("DELETE FROM coach_chats WHERE user_id = ?", (user_id,))
+        self.conn.execute("DELETE FROM coach_messages WHERE user_id = ?", (user_id,))
+        self.commit()
+        return cursor.rowcount
+
+    def add_chat_message(self, user_id: int, chat_id: int, role: str,
+                         content: str) -> dict:
+        now = _now()
+        cursor = self.conn.execute(
+            "INSERT INTO coach_messages (chat_id, user_id, role, content, created) "
+            "VALUES (?,?,?,?,?)", (chat_id, user_id, role, content, now))
+        self.conn.execute(
+            "UPDATE coach_chats SET updated = ? WHERE user_id = ? AND id = ?",
+            (now, user_id, chat_id))
+        self.commit()
+        return {"id": cursor.lastrowid, "role": role, "content": content,
+                "created": now}
+
+    def chat_messages(self, user_id: int, chat_id: int,
+                      last: int | None = None) -> list[dict]:
+        """Oldest first; `last` keeps only the most recent ones."""
+        sql = ("SELECT id, role, content, created FROM coach_messages "
+               "WHERE user_id = ? AND chat_id = ? ORDER BY id DESC")
+        params: tuple = (user_id, chat_id)
+        if last:
+            sql += " LIMIT ?"
+            params += (last,)
+        return [dict(r) for r in self.conn.execute(sql, params)][::-1]
+
+    def set_chat_summary(self, user_id: int, chat_id: int, summary: str,
+                         upto: int) -> None:
+        self.conn.execute(
+            "UPDATE coach_chats SET summary = ?, summary_upto = ? "
+            "WHERE user_id = ? AND id = ?", (summary, upto, user_id, chat_id))
+        self.commit()
+
+    def recent_chats(self, user_id: int, exclude: int | None, since: str,
+                     limit: int = 5, min_messages: int = 2) -> list[dict]:
+        """The other conversations worth recalling, newest first."""
+        rows = self.conn.execute(
+            f"SELECT {self._CHAT_COLUMNS} FROM coach_chats c "
+            "WHERE c.user_id = ? AND c.id != ? AND c.updated >= ? "
+            "AND (SELECT COUNT(*) FROM coach_messages m WHERE m.chat_id = c.id) >= ? "
+            "ORDER BY c.updated DESC LIMIT ?",
+            (user_id, exclude or 0, since, min_messages, limit))
+        return [self._chat_row(r) for r in rows]
+
+    # ---- coach memory -------------------------------------------------------
+    def memories(self, user_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, text, source_chat_id, created FROM coach_memories "
+            "WHERE user_id = ? ORDER BY id ASC", (user_id,))
+        return [dict(r) for r in rows]
+
+    def memory(self, user_id: int, memory_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT id, text, source_chat_id, created FROM coach_memories "
+            "WHERE user_id = ? AND id = ?", (user_id, memory_id)).fetchone()
+        return dict(row) if row else None
+
+    def add_memory(self, user_id: int, text: str,
+                   source_chat_id: int | None = None) -> dict:
+        text = " ".join((text or "").split())[:MAX_MEMORY_CHARS]
+        if not text:
+            raise ValueError("Empty memory.")
+        count = self.conn.execute(
+            "SELECT COUNT(*) c FROM coach_memories WHERE user_id = ?",
+            (user_id,)).fetchone()["c"]
+        if count >= MAX_MEMORIES:
+            raise MemoryFull()
+        cursor = self.conn.execute(
+            "INSERT INTO coach_memories (user_id, text, source_chat_id, created) "
+            "VALUES (?,?,?,?)", (user_id, text, source_chat_id, _now()))
+        self.commit()
+        return self.memory(user_id, cursor.lastrowid)
+
+    def update_memory(self, user_id: int, memory_id: int, text: str) -> dict | None:
+        text = " ".join((text or "").split())[:MAX_MEMORY_CHARS]
+        if not text:
+            raise ValueError("Empty memory.")
+        self.conn.execute(
+            "UPDATE coach_memories SET text = ? WHERE user_id = ? AND id = ?",
+            (text, user_id, memory_id))
+        self.commit()
+        return self.memory(user_id, memory_id)
+
+    def delete_memory(self, user_id: int, memory_id: int) -> bool:
+        cursor = self.conn.execute(
+            "DELETE FROM coach_memories WHERE user_id = ? AND id = ?",
+            (user_id, memory_id))
+        self.commit()
+        return cursor.rowcount == 1
 
     # ---- beta feedback -----------------------------------------------------
     def add_feedback(self, user_id: int, text: str, page: str = "",
